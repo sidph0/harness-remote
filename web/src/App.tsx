@@ -3720,7 +3720,7 @@ function App() {
       {mainView === "sessions" && (
         <section className="panel sessions fade-in">
           <div className="section-heading">
-            <div>
+            <div className="ios-sessions-title">
               <h2>{t('sessions.title')}</h2>
               <p className="subtle">
                 {t('sessions.summary', { total: sessions.length, active: activeSessions, changed: changedSessions })}
@@ -3743,23 +3743,34 @@ function App() {
               )}
             </div>
             <div className="inline-actions sessions-header-actions">
-              <button onClick={refreshSessionsWithIndicator} className="btn-secondary" disabled={refreshingSessions}>
+              <button onClick={refreshSessionsWithIndicator}
+                className="btn-secondary ios-toolbar-button"
+                disabled={refreshingSessions}
+                aria-label={t('sessions.refresh')}
+                title={t('sessions.refresh')}
+              >
                 {refreshingSessions ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}
-                {t('sessions.refresh')}
+                {isNativeIOS ? null : <span>{t('sessions.refresh')}</span>}
               </button>
               <button
                 onClick={openNewSessionPicker}
-                className="btn-primary"
+                className="btn-primary ios-toolbar-button"
                 disabled={creatingSession || isOffline}
-                title={isOffline ? t('sessions.offlineHint') : undefined}
+                aria-label={creatingSession ? t('sessions.creating') : t('sessions.new')}
+                title={isOffline ? t('sessions.offlineHint') : creatingSession ? t('sessions.creating') : t('sessions.new')}
               >
                 {creatingSession ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}
-                {creatingSession ? t('sessions.creating') : t('sessions.new')}
+                {!isNativeIOS && (creatingSession ? t('sessions.creating') : t('sessions.new'))}
               </button>
               {isNativeIOS && (
-                <button type="button" className="btn-secondary" onClick={() => setShowCollabAttach(true)}>
+                <button
+                  type="button"
+                  className="btn-secondary ios-toolbar-button"
+                  onClick={() => setShowCollabAttach(true)}
+                  aria-label={t('collab.attach')}
+                  title={t('collab.attach')}
+                >
                   <PlusIcon size={18} />
-                  {t('collab.attach')}
                 </button>
               )}
             </div>
