@@ -407,6 +407,18 @@ assert.equal(
   false,
   'an unsupported checkbox request must stay informational and must not gain a send fallback'
 )
+// Read-only Collab is a display-only attachment: hiding controls by disabling them still exposes
+// prompt/reply affordances, so both the request card and the composer must be absent from the tree.
+const detailRender = appCode.slice(appCode.indexOf('{mainView === "detail" && ('), appCode.indexOf('{activeDetailSheet && selectedSession'))
+for (const [marker, label] of [['<section className="collab-request"', 'Collab request section'], ['<div className="composer"', 'Collab composer']]) {
+  const markerStart = detailRender.indexOf(marker)
+  assert.notEqual(markerStart, -1, `${label} should render in the detail view`)
+  assert.match(
+    detailRender.slice(Math.max(0, markerStart - 220), markerStart),
+    /!selectedCollabReadOnly\s*&&/,
+    `${label} must not render for a read-only Collab attachment`
+  )
+}
 
 const collabMutationRefMatch = /const\s+(\w+Ref)\s*=\s*useRef(?:<Promise<[^>]+>>)?\(Promise\.resolve\(\)\)/.exec(appCode)
 assert.ok(collabMutationRefMatch, 'Collab Keychain operations should share one Promise mutation-chain ref')

@@ -4037,7 +4037,7 @@ function App() {
             onQuestionResolved={handleQuestionResolved}
           />
 
-          {selectedCollabRequest && (
+          {!selectedCollabReadOnly && selectedCollabRequest && (
             <section className="collab-request" aria-live="polite">
               <h3>{selectedCollabRequest.title}</h3>
               {!selectedCollabRequest.supported ? (
@@ -4068,7 +4068,7 @@ function App() {
             </section>
           )}
 
-          <div className="composer" ref={composerRef}>
+          {!selectedCollabReadOnly && <div className="composer" ref={composerRef}>
             <textarea
               value={composer}
               onChange={(event) => setComposer(event.target.value)}
@@ -4093,7 +4093,7 @@ function App() {
             <button onClick={showStopAction ? abortSession : send} disabled={!selectedSession || (Boolean(selectedCollabEntry) && !selectedCollabWritable)} className={showStopAction ? "btn-danger" : "btn-primary"}>
               {showStopAction ? <StopCircleIcon size={18} /> : <SendIcon size={18} />}
             </button>
-          </div>
+          </div>}
 
           {runtimeError && <div className="error fade-in">✗ {runtimeError}</div>}
         </main>

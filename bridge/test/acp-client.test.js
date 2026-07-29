@@ -90,6 +90,41 @@ test("launches an ACP adapter with the configured command and arguments", async 
   client.close()
 })
 
+test("does not pass bridge credentials to the ACP adapter", async () => {
+  const credentials = [
+    "HARNESS_REMOTE_USERNAME",
+    "HARNESS_REMOTE_PASSWORD",
+    "OMP_BRIDGE_USERNAME",
+    "OMP_BRIDGE_PASSWORD"
+  ]
+  const sentinel = "ACP_ENV_SENTINEL"
+  const original = Object.fromEntries([...credentials, sentinel].map((name) => [name, process.env[name]]))
+  let spawnOptions
+
+  try {
+    for (const name of credentials) process.env[name] = `secret-${name}`
+    process.env[sentinel] = "preserved"
+
+    const client = new AcpClient({
+      spawnProcess: (_command, _args, options) => {
+        spawnOptions = options
+        return new FakeChild((child, request) => respondToHandshake(child, request))
+      }
+    })
+
+    await client.start()
+    assert.ok(spawnOptions.env, "spawn options must provide a sanitized environment")
+    for (const name of credentials) assert.equal(name in spawnOptions.env, false)
+    assert.equal(spawnOptions.env[sentinel], "preserved")
+    client.close()
+  } finally {
+    for (const [name, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})
+
 test("accepts alternate or absent ACP authentication methods", async () => {
   let authenticatedMethod
   const alternate = new AcpClient({

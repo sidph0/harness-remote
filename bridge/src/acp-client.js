@@ -52,9 +52,17 @@ export class AcpClient extends EventEmitter {
     const windowsArgs = windowsCommand === this.#command
       ? this.#args
       : ["/d", "/s", "/c", this.#command, ...this.#args]
+    const {
+      HARNESS_REMOTE_USERNAME: _remoteUsername,
+      HARNESS_REMOTE_PASSWORD: _remotePassword,
+      OMP_BRIDGE_USERNAME: _bridgeUsername,
+      OMP_BRIDGE_PASSWORD: _bridgePassword,
+      ...env
+    } = process.env
     const child = this.#spawn(windowsCommand, windowsArgs, {
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      env
     })
     this.#child = child
     child.stdout.setEncoding("utf8")
