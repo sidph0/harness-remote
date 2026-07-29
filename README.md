@@ -5,7 +5,7 @@ It is designed to make daily usage simple: connect to a backend, check active se
 
 ## Supported Harnesses
 
-The app is backend-agnostic: you pick the harness in **Settings** and each one keeps its own saved connection, so you can switch between them without re-entering anything.
+The web and PWA builds offer all four backends: pick the harness in **Settings**, and each one keeps its own saved connection. The sideloaded iOS app is intentionally OMP-only, with direct bridge sessions and OMP Collab attachments.
 
 | Harness | Status | How it connects |
 |---|---|---|
@@ -42,9 +42,9 @@ Support levels differ by what each harness exposes. The [OpenCode](#opencode-ser
 
 ## What It Can Do
 
-Everything in the first group works on all four harnesses. The rest depends on what the harness
-exposes, so each entry says where it applies; the app hides what a backend cannot do rather than
-offering a control that fails.
+In the web and PWA builds, everything in the first group works on all four harnesses. The rest
+depends on what the harness exposes, so each entry says where it applies; the app hides what a
+backend cannot do rather than offering a control that fails.
 
 - configure and test the connection to any supported harness — OpenCode, OMP, PI, or Claude Code — each with its
   own saved credentials
@@ -54,7 +54,7 @@ offering a control that fails.
 - stop running work when necessary
 - pick the model a session uses
 - browse the filesystem to choose the working directory for a new session
-- adapt to the screen: Android-friendly bottom navigation on a phone, a two-pane sidebar layout on a
+- adapt to the screen: touch-friendly bottom navigation on a phone, a two-pane sidebar layout on a
   wide screen (see [Desktop Mode](#desktop-mode))
 - jump to the top or the bottom of a long transcript or session list without dragging through it
 - play a completion sound when a running session finishes
@@ -87,8 +87,7 @@ desktop layout. Narrow the window below that and it goes back to the phone layou
 ### Using it
 
 1. Serve the web app — `npm run dev` in `web/` during development, or any static host for a
-   `npm run build` bundle. The Android APK uses the same code and switches layout on a tablet or
-   a large foldable.
+   `npm run build` bundle. The native iOS build uses the same React app.
 2. Open it in a desktop browser. Above 781px the sidebar appears and the first session opens by
    itself, so you land in a conversation rather than on an empty pane.
 3. Pick sessions from the sidebar. Hovering a row reveals its rename and delete icons; the
@@ -102,7 +101,8 @@ desktop layout. Narrow the window below that and it goes back to the phone layou
    to the top also releases the chat's auto-follow so incoming output stops yanking the view down.
 
 Everything else — prompts, slash commands, stopping a run, model and agent selection, todos,
-diffs — behaves exactly as it does on a phone. The backend setup below is identical either way.
+diffs — behaves exactly as it does in a phone browser. The web/PWA backend setup is identical in
+both layouts; the sideloaded iOS app remains OMP-only.
 
 ## Progressive Web App (PWA)
 
@@ -111,10 +111,8 @@ https://giuliastro.github.io/harness-remote/. Open that URL over HTTPS and brows
 add it to the home screen / app list, opening in its own standalone window.
 
 It is redeployed on every merge to `main` that touches `web/`, so it carries the current tip of the
-branch rather than the last release. That is the point: it is where a change gets tried on a real
-phone against a real server before it ships. The Android APK in [Releases](https://github.com/giuliastro/harness-remote/releases/latest)
-is the stable channel and still comes only from `v*` tags — if you want a version that was cut
-deliberately, install that one.
+branch rather than a separately cut native build. Use it to try the web path; the iOS app is built
+and sideloaded from this checkout using the steps below.
 
 The deploy runs the web regression suites first, so a merge that breaks them does not reach the URL.
 
@@ -124,8 +122,8 @@ The deploy runs the web regression suites first, so a merge that breaks them doe
 - Requests to your harness server are never cached — they go to whatever host you configured in
   Settings, cross-origin from wherever the PWA itself is hosted, so session data always comes from
   the live server.
-- The service worker is skipped entirely in the native Android app (Capacitor) and in local dev
-  builds; it only registers in production web builds.
+- The service worker is skipped entirely in the native iOS app (Capacitor) and in local dev builds;
+  it only registers in production web builds.
 
 Because the app talks to your server cross-origin, the server needs the PWA's origin listed
 in `--cors`:
@@ -146,10 +144,11 @@ HTTPS page is not allowed to talk to an `http://` address unless that address is
   `Failed to fetch`. Settings shows a warning next to the host field when the address you typed
   falls into this case.
 
-So the phone-to-PC setup — the reason this app exists — needs one of:
+So the phone-to-computer setup — the reason this app exists — needs one of:
 
-- **the Android app** from [Releases](https://github.com/giuliastro/harness-remote/releases/latest),
-  which is not a web page and has no such restriction. This stays the recommended route.
+- **the sideloaded iOS app** built below. Ordinary Capacitor native HTTP requests are not subject to
+  browser mixed-content or CORS restrictions, so this is the recommended iPhone route. The OMP
+  bridge's authenticated SSE stream is the exception described in its setup below.
 - **HTTPS on the server**, via a reverse proxy holding a certificate the phone trusts.
 - **a tunnel** (Tailscale Serve, Cloudflare Tunnel, ngrok) that gives the server its own HTTPS
   origin — remember to add that origin to `--cors`.
@@ -160,16 +159,16 @@ So the phone-to-PC setup — the reason this app exists — needs one of:
 ## Technology Stack
 
 - frontend: React + TypeScript + Vite
-- mobile packaging: Capacitor (Android APK)
-- networking: per-harness transports behind one app-side API — the OpenCode HTTP API spoken directly, and the local HTTP/SSE bridge in `bridge/` that fronts both OMP and PI over ACP
-- CI/CD: GitHub Actions for cloud APK builds
+- mobile packaging: Capacitor 8 for iOS 15+; native builds require Xcode 26+
+- networking: direct OpenCode HTTP, the local HTTP/SSE ACP bridge for OMP, PI, and Claude Code,
+  plus encrypted WebSocket attachment to OMP Collab
+- OMP Collab wire protocol: [`@oh-my-pi/pi-wire`](https://www.npmjs.com/package/@oh-my-pi/pi-wire), pinned to `17.1.8`
 - i18n: lightweight custom i18n module with English, Italian, and Traditional Chinese
 
-## Download
+## Install on iPhone
 
-Download the latest signed Android APK from the GitHub Releases page:
-
-https://github.com/giuliastro/harness-remote/releases/latest
+There is no prebuilt download or App Store/TestFlight channel. Build an IPA on a Mac and install it
+with Sideloadly by following [iOS Sideload Build](#ios-sideload-build).
 
 ## Harness Setup
 
@@ -205,7 +204,8 @@ For browser-based web debugging, add CORS origins as needed:
 npx -y opencode-ai serve --hostname 0.0.0.0 --port 4096 --cors http://localhost:5173 --cors http://127.0.0.1:5173
 ```
 
-For Android APK (Capacitor native HTTP) CORS is usually not required, but keeping explicit origins is still fine.
+The sideloaded iOS app does not expose OpenCode; use this setup with the web or PWA build, which
+needs every exact browser origin allowed.
 
 If you use browser mode from another host/IP, include both localhost and your dev host:
 
@@ -225,15 +225,18 @@ Harness Remote connects to OMP through the bridge included in this repository. T
 - a working `omp` command in `PATH`;
 - a checkout of this repository on the computer that runs OMP.
 
-Start the bridge from the repository root. Restrict every worktree that the phone may access with `--root`; repeat the option to allow more than one root.
+For direct access on a trusted LAN, start the bridge from the repository root. Restrict every
+worktree that the iPhone may access with `--root`; repeat the option to allow more than one root.
 
 ```bash
+export HARNESS_REMOTE_USERNAME=omp
+printf 'Bridge password: '; read -s HARNESS_REMOTE_PASSWORD; printf '\n'; export HARNESS_REMOTE_PASSWORD
 npx --yes ./bridge \
   --host 0.0.0.0 \
   --port 4097 \
-  --username omp \
-  --password "use-a-long-unique-password" \
-  --root "$HOME/Software"
+  --root "$HOME/Software" \
+  --cors capacitor://localhost
+unset HARNESS_REMOTE_PASSWORD
 ```
 
 The default ACP launch is `omp acp`. The bridge can launch another ACP adapter with `--acp-command` and repeatable `--acp-arg` options, for example:
@@ -250,19 +253,23 @@ The preferred environment variables are `HARNESS_REMOTE_ACP_COMMAND` and
 Existing `OMP_BRIDGE_*` names remain aliases for one compatibility release.
 The PI setup below selects the adapter and the matching app backend automatically.
 
-The default bind address is `127.0.0.1`. Use `0.0.0.0` only for a trusted LAN or VPN. The bridge refuses a non-loopback bind without both username and password.
+The default bind address is `127.0.0.1`. A phone connection requires a non-loopback bind such as
+`0.0.0.0`. This guide requires credentials and an explicit `--root` for every such connection. The
+CLI enforces only the username and password; if `--root` is omitted, it allows the current working
+directory. Do not rely on that default for phone access.
 
 #### Configure the app
 
-1. In **Settings**, select **Oh My Pi (bridge)**.
+1. On web/PWA, in **Settings**, select **Oh My Pi (bridge)**. The native iOS app is already fixed to OMP, so it has no backend selector.
 2. Enter the computer's LAN or VPN address, port `4097`, and the same Basic Auth credentials.
 3. Select **Test connection**. A healthy bridge reports the installed OMP version.
 4. Create or open a session, then send a prompt. The user message appears immediately, followed by streamed assistant output.
 
-To verify the bridge from the host before configuring the app:
+To verify the bridge from the host before configuring the app, let `curl` prompt for the password so
+it does not appear in the command line or shell history:
 
 ```bash
-curl --user "omp:use-a-long-unique-password" http://127.0.0.1:4097/v1/health
+curl --user omp http://127.0.0.1:4097/v1/health
 ```
 
 Expected response:
@@ -284,17 +291,65 @@ directory, so clearing or moving `--state-dir` restores the harness title and ma
 visible again. ACP defines no physical session deletion, so the native OMP history stays intact and
 remains visible to desktop clients.
 
+#### Tailscale access
+
+Tailscale provides routing only; the bridge's Basic Auth remains required.
+
+1. Install Tailscale separately on the bridge host and the iPhone, sign in on both, and confirm they
+   are on the same tailnet.
+2. Start the bridge on a non-loopback address with an explicit allowed root and credentials:
+
+   ```bash
+   export HARNESS_REMOTE_USERNAME=omp
+   printf 'Bridge password: '; read -s HARNESS_REMOTE_PASSWORD; printf '\n'; export HARNESS_REMOTE_PASSWORD
+   npx --yes ./bridge \
+     --host 0.0.0.0 \
+     --port 4097 \
+     --root "$HOME/Software" \
+     --cors capacitor://localhost
+   unset HARNESS_REMOTE_PASSWORD
+   ```
+
+3. In Harness Remote, use the host's Tailscale MagicDNS name or tailnet IP, port `4097`, and those
+   same bridge credentials. Restrict the host firewall to the tailnet where possible.
+
+Harness Remote does not install, sign in to, or authenticate Tailscale. Do not publish port `4097`
+to the Internet; a tailnet connection does not replace bridge authentication or `--root`.
+
+#### Attach an OMP Collab session
+
+OMP Collab is a separate path for following the arbitrary OMP session already running on your
+desktop; it does not use or discover the bridge's session list.
+
+1. Run `/collab` in that desktop OMP session and copy the bearer link it prints.
+2. On the iPhone, choose **Attach OMP Collab**, enter the required display name, paste the link, and
+   attach. There is no automatic global discovery or account lookup.
+
+Treat the link as a password. It contains the room key and, for a writable link, an optional write
+token. Harness Remote connects over WebSocket and encrypts frames with AES-256-GCM using a 12-byte
+IV. Custom non-local relays must use `wss://`; do not downgrade them to plaintext WebSocket.
+Snapshots stay in memory. Saved attachment links persist only in the iOS Keychain, not browser
+storage. A writable link exposes prompt, abort, and reply controls; a read-only link exposes no
+mutation controls at all — prompt, abort, and reply controls are absent — while it follows live
+output. Remove an attachment when the phone should no longer retain its bearer link.
+
 #### What `--root` does and does not restrict
 
 `--root` restricts the bridge's own surface: which directories the app may browse (`/file`, `/path`) and which working directory a new session may use. It is not a sandbox for the agent. Once a session is running, OMP executes with your full user privileges and approves its own tool calls, so it can read and write outside the configured roots exactly as it would on the desktop. Point the bridge only at machines and accounts where you would already let OMP work unattended.
 
 #### Browser access
 
-Native app builds need no CORS configuration. To use the app from a browser instead, list each exact origin with `--cors`; the option is repeatable and no origin is allowed by default.
+Ordinary Capacitor HTTP requests bypass browser CORS, but authenticated SSE in the sideloaded app
+uses WebView `fetch`. Native direct and Tailscale bridge launches therefore must allow the exact
+`capacitor://localhost` origin, as shown above. For browser access, also list each exact browser
+origin with repeatable `--cors` options; no origin is allowed by default:
 
 ```bash
-npx --yes ./bridge --port 4097 --username omp --password "…" --root "$HOME/Software" \
+export HARNESS_REMOTE_USERNAME=omp
+printf 'Bridge password: '; read -s HARNESS_REMOTE_PASSWORD; printf '\n'; export HARNESS_REMOTE_PASSWORD
+npx --yes ./bridge --port 4097 --root "$HOME/Software" \
   --cors http://localhost:5173
+unset HARNESS_REMOTE_PASSWORD
 ```
 
 #### Live synchronization scope
@@ -327,13 +382,14 @@ the app.
 Start the bridge from the repository root:
 
 ```bash
+export HARNESS_REMOTE_USERNAME=pi
+printf 'Bridge password: '; read -s HARNESS_REMOTE_PASSWORD; printf '\n'; export HARNESS_REMOTE_PASSWORD
 npx --yes ./bridge \
   --backend pi \
   --host 0.0.0.0 \
   --port 4097 \
-  --username pi \
-  --password "use-a-long-unique-password" \
   --root "$HOME/Software"
+unset HARNESS_REMOTE_PASSWORD
 ```
 
 The `pi` backend defaults to `npx -y @automatalabs/pi-acp@0.2.5`. The version is pinned
@@ -342,7 +398,7 @@ the registry index before its tarball could be fetched. Use `--acp-command` and 
 `--acp-arg` options to track a newer adapter, or to launch one installed globally or from a
 local checkout. The first start downloads the adapter, which is why the handshake allows 90s.
 
-In the app, select **PI (ACP bridge)** and enter the same host, port, username,
+In the web or PWA app, select **PI (ACP bridge)** and enter the same host, port, username,
 and password. A successful health check reports `backend: "pi"` and the
 adapter version.
 
@@ -383,13 +439,14 @@ adapter, which wraps the Claude Agent SDK and speaks ACP over stdio.
 Start the bridge from the repository root:
 
 ```bash
+export HARNESS_REMOTE_USERNAME=claude
+printf 'Bridge password: '; read -s HARNESS_REMOTE_PASSWORD; printf '\n'; export HARNESS_REMOTE_PASSWORD
 npx --yes ./bridge \
   --backend claude \
   --host 0.0.0.0 \
   --port 4097 \
-  --username claude \
-  --password "use-a-long-unique-password" \
   --root "$HOME/Software"
+unset HARNESS_REMOTE_PASSWORD
 ```
 
 The `claude` backend defaults to `npx -y @agentclientprotocol/claude-agent-acp@0.63.0`.
@@ -397,7 +454,7 @@ The version is pinned to avoid the same `notarget` issue that motivated pinning 
 PI adapter. Use `--acp-command` and repeated `--acp-arg` options to track a newer
 adapter. The first start downloads the adapter, which is why the handshake allows 90s.
 
-In the app, select **Claude Code (ACP bridge)** and enter the same host, port,
+In the web or PWA app, select **Claude Code (ACP bridge)** and enter the same host, port,
 username, and password. A successful health check reports `backend: "claude"`
 and the adapter version.
 
@@ -440,47 +497,80 @@ npm install
 npm run dev
 ```
 Open the shown URL from your browser (or your phone on the same LAN). A desktop browser window
-gets the two-pane layout described in [Desktop Mode](#desktop-mode); a phone gets the mobile one.
+gets the two-pane layout described in [Desktop Mode](#desktop-mode); a phone gets the phone layout.
 
-## Android APK Build (Cloud, no local SDK required)
+## iOS Sideload Build
 
-1. Push to `main` to run build and regression checks and upload debug/release APK artifacts.
-2. Create a `v*` tag after the checks and device smoke test succeed; it publishes a GitHub Release.
-3. Download `harness-remote-debug-apk-v<version>` from GitHub Actions for installation tests.
+You need Node.js 22.12 or newer, a Mac with Xcode 26 or newer, an iPhone running iOS 15 or newer,
+an Apple ID accepted by Xcode/Sideloadly, and [Sideloadly](https://sideloadly.io/) installed.
+`web/ios/` is generated and ignored; do not expect it in a fresh checkout.
 
-To publish a signed release APK (`app-release-signed.apk`), configure these GitHub repository secrets:
-
-- `ANDROID_KEYSTORE_BASE64`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS`
-- `ANDROID_KEY_PASSWORD`
-
-Tagged releases fail rather than publishing an unsigned APK when any signing secret is missing. The workflow builds the web app, runs web and bridge regressions, synchronizes Capacitor plus native live events, builds Android artifacts, and verifies APK signatures.
-
-## Manual Android Packaging (Optional)
+### Generate and synchronize the Xcode project
 
 ```bash
 cd web
+npm install
 npm run build
-npx cap add android
-npx cap sync android
+npm run cap:add:ios       # first generation only
+npm run cap:sync:ios
+open ios/App/App.xcodeproj
 ```
 
-Then open `web/android` in Android Studio if you want local native debugging.
+On later builds, run `npm run build` and `npm run cap:sync:ios`; do not run `cap:add:ios` again.
+
+### Archive and export the IPA
+
+1. In Xcode, select the **App** target, choose your development team under **Signing &
+   Capabilities**, and set a bundle identifier accepted by that team.
+2. Select **Any iOS Device (arm64)** as the run destination.
+3. Choose **Product > Archive**.
+4. In Organizer, select the new archive, choose **Distribute App > Custom > Development**, and
+   export the signed `.ipa` to a local folder. This project does not use the App Store or TestFlight
+   workflow.
+
+### Install with Sideloadly
+
+1. Connect the iPhone to the Mac, unlock it, and trust the computer.
+2. Open Sideloadly, select the iPhone, drag in the exported IPA, enter the signing Apple ID, and
+   choose **Start**. Complete any Apple sign-in or two-factor prompt.
+3. If iOS asks, enable **Developer Mode** and trust the signing profile under **Settings > General >
+   VPN & Device Management**, then launch Harness Remote.
+
+The installation remains valid only as long as its Apple signing profile. Free Apple IDs commonly
+require re-signing and reinstalling every seven days; paid-account validity follows the profile
+Sideloadly creates.
+
+### iPhone smoke check
+
+Do not treat a successful archive as network validation. On the installed app:
+
+- **Direct OMP bridge:** test the connection, create a session under an allowed `--root`, select it,
+  send a prompt and observe streamed output, stop an active turn, then interrupt and restore the
+  network (or background/foreground the app) and confirm it reconnects.
+- **OMP Collab writable link:** attach the link, observe live desktop output, then verify prompt,
+  abort, and reply controls against a disposable session.
+- **OMP Collab read-only link:** attach it and confirm live output arrives while prompt, abort, and
+  reply controls are absent.
+- **Keychain lifecycle:** attach a Collab link, relaunch and confirm it remains attached, then detach
+  it, relaunch again, and confirm it remains removed.
+
+Re-run the direct fetch/SSE smoke check after every relevant Capacitor or iOS networking change.
 
 ## App Configuration
 
 Use your server values:
 
-- Backend: the harness you are connecting to, which also decides the default port
+- Backend (web/PWA): OpenCode, OMP, PI, or Claude Code; the choice also decides the default port
+- Backend (sideloaded iOS): fixed to OMP, with direct bridge and Collab attachment paths
 - Host: computer LAN IP (for example `192.168.1.20`)
 - Port: `4096` for an OpenCode server, `4097` for the bridge in front of OMP, PI, or Claude Code
 - Username/password: the Basic Auth credentials you started that server or bridge with
 
-Each backend keeps its own saved connection, so switching between them in Settings does not make you
-retype anything.
+The web and PWA builds keep a separate saved connection for each backend, so switching in Settings
+does not make you retype anything.
 
-The app is not limited to LAN. You can also use it over WAN/VPN if your network routing (NAT/firewall) and security setup are configured correctly.
+For remote use, prefer Tailscale or another trusted VPN. Never expose an ACP bridge directly to the
+public Internet.
 
 ## Main Endpoints Used
 

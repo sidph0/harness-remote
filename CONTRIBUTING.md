@@ -1,9 +1,10 @@
 # Contributing to Harness Remote
 
 Thanks for wanting to work on this. Harness Remote is a companion app for driving coding-agent
-harnesses from a phone or a desktop browser. It is deliberately harness-agnostic: OpenCode, Oh My Pi
-(OMP) and PI are supported today. Adding a harness should mean adding a profile entry and its setup
-section, never a special case threaded through the app.
+harnesses from a phone or a desktop browser. The web/PWA supports OpenCode, Oh My Pi (OMP), PI, and
+Claude. Native iOS is intentionally OMP-only: it hides backend selection and supports OMP direct and
+OMP Collab. Adding a web harness should mean adding a profile entry and its setup section, never a
+special case threaded through the app.
 
 This document is long on purpose. Read the section that matches what you are touching, or all of it
 if you are having an agent do the work.
@@ -12,21 +13,24 @@ if you are having an agent do the work.
 
 | Path | What it is |
 |---|---|
-| `web/` | The app: React + TypeScript + Vite, packaged for Android with Capacitor |
-| `web/src/` | Application source. `App.tsx` holds most of the UI, `api.ts` the HTTP client, `i18n.ts` the translations |
-| `web/native-android/` | Java sources copied into the generated Android project — see [Android packaging](#android-packaging) |
-| `bridge/` | A local HTTP/SSE server translating the app's API to ACP over stdio, for OMP and PI. Per-harness launch commands and capabilities live in `src/harness-profiles.js` |
-| `.github/workflows/` | Cloud APK and AAB builds |
+| `web/` | The React + TypeScript + Vite app and Capacitor 8 configuration |
+| `web/src/` | Application source. `App.tsx` holds most of the UI, `api.ts` the HTTP client, and `i18n.ts` the translations |
+| `web/native-ios/` | Swift sources copied into the generated Xcode project by `npm run cap:sync:ios` |
+| `web/ios/` | Generated, ignored Xcode project; create it on a Mac and never commit it |
+| `bridge/` | Local HTTP/SSE-to-ACP service for OMP and PI. Launch commands and capabilities live in `src/harness-profiles.js` |
+| `.github/workflows/` | Web deployment checks; native iOS packaging remains manual |
 | `OMP-INTEGRATION-PLAN.md` | Design notes and findings from the OMP integration, in Italian |
 
 ## Prerequisites
 
-- **Node.js 22 or newer.** `web/` needs `npm install`; `bridge/` has no dependencies at all and
-  runs on the standard library, so do not look for a lockfile there.
-- **A harness to talk to.** An OpenCode server, a working `omp` command, or PI. You can develop
-  UI-only changes without one, but see [Test against a real agent](#test-against-a-real-agent)
-  before assuming that is enough.
-- **No Android SDK required.** CI builds the APK. You only need one for local native debugging.
+- **Node.js 22.12 or newer.** `web/` needs `npm install`; `bridge/` has no runtime dependencies and
+  uses the standard library, so do not look for a lockfile there.
+- **Bun for the Collab contract suite.** `npm run test:collab` invokes Bun directly.
+- **A harness to talk to.** An OpenCode server, a working `omp` command, or PI. UI-only work can
+  start without one, but it is not a substitute for [testing against a real agent](#test-against-a-real-agent).
+- **For native work:** a Mac with Xcode 26 or newer, an iPhone on iOS 15 or newer, an Apple ID
+  accepted for signing, and Sideloadly. The automated web and bridge gates run on any supported
+  development platform; Xcode generation, synchronization, archive, export, and iPhone checks do not.
 
 ## Getting it running
 
@@ -36,30 +40,58 @@ npm install
 npm run dev
 ```
 
-Open the printed URL. Configure the connection in **Settings**; each backend keeps its own saved
-connection, so switching between them does not lose anything.
+Open the printed URL. In the web/PWA, configure the connection in **Settings**; each backend keeps
+its own saved connection, so switching between them does not lose anything. Native iOS forces OMP
+and does not show the backend picker.
 
 ### Against OpenCode
 
 Start the server with Basic Auth and, for browser development, CORS origins. The README's
 [OpenCode Server Setup](README.md#opencode-server-setup) has the exact commands.
 
-### Against OMP
+### Against OMP directly
 
-OMP speaks ACP over stdio rather than HTTP, so the app talks to it through the bridge:
+OMP speaks ACP over stdio. The bridge launches `omp acp` and translates the app's HTTP/SSE API:
 
 ```bash
 cd bridge
-node src/cli.js --port 4097 --root "$HOME/your-project" --cors http://localhost:5173
+export HARNESS_REMOTE_USERNAME=harness
+printf 'Bridge password: '
+read -s HARNESS_REMOTE_PASSWORD
+printf '\n'
+export HARNESS_REMOTE_PASSWORD
+node src/cli.js --host 0.0.0.0 --port 4097 \
+  --cors capacitor://localhost \
+  --root "$HOME/your-project"
+unset HARNESS_REMOTE_PASSWORD
 ```
 
-`--cors` matters for browser development and is easy to forget: without it the browser blocks every
-request and the app just looks broken. Native builds do not need it. The bridge binds to
-`127.0.0.1` by default and refuses any non-loopback bind without `--username` and `--password`.
+Set the app's OMP connection to the host computer's LAN address, port `4097`, and the same Basic
+Auth credentials. The bridge defaults to `127.0.0.1`; any non-loopback bind requires a username and
+password, supplied above through the environment so the password does not enter argv or shell
+history. The CLI defaults omitted roots to the current directory, but this guide requires an
+explicit `--root` for every non-loopback launch as a safety boundary. Never expose this HTTP service
+directly to the public Internet. Ordinary native Capacitor HTTP requests bypass browser CORS, but
+iOS authenticated SSE uses WebView `fetch`, so IPA bridge launches must allow the exact
+`capacitor://localhost` origin. For web development, allow that browser's exact origin instead, for
+example `--cors http://localhost:5173`.
+
+Tailscale is an alternative private route, not an app feature: install and authenticate it
+separately on the host and iPhone, then enter the host's MagicDNS name or tailnet IP in the app.
+Keep bridge Basic Auth enabled over Tailscale.
+
+### Against OMP Collab
+
+Run `/collab` inside the arbitrary desktop OMP session you want to share. Manually copy its bearer
+link to **Attach OMP Collab**; the app does not discover global OMP sessions. A link contains the
+room key and may contain a write token, so handle it like a password. The client uses WebSocket and
+AES-256-GCM with a 12-byte IV; a custom non-local relay must use `wss://`. Snapshots remain in
+memory, while attached bearer links persist only in iOS Keychain.
 
 ## The checks you must run
 
-CI runs all of these before it packages anything, so a PR that skips them will fail there instead:
+Run the full automated matrix locally; GitHub's web workflow covers only its listed web gates and
+does not package or validate iOS:
 
 ```bash
 cd web
@@ -70,12 +102,26 @@ npm run test:ui
 npm run test:settings
 npm run test:model
 npm run test:events
+node --experimental-strip-types src/directSession.test.mjs
+node --experimental-strip-types src/secureStorage.test.mjs
+node src/ios-native-sync.test.mjs
+node src/ios-packaging.test.mjs
+npm run test:collab
 
 cd ../bridge
 npm test
 ```
 
 `npm run build` is `tsc -b && vite build`, so it type-checks as well as bundles.
+
+| Gate | What it protects |
+|---|---|
+| Build plus `test:i18n`, `test:config`, `test:ui`, `test:settings`, `test:model`, `test:events` | Web bundle and established web regressions |
+| `directSession.test.mjs` | Direct session creation, selection, capabilities, and resume behavior |
+| `secureStorage.test.mjs` | iOS Keychain plugin boundary with no web-storage fallback |
+| `ios-native-sync.test.mjs` and `ios-packaging.test.mjs` | Repeatable iOS metadata/native-source sync and packaging assumptions |
+| `test:collab` | Collab links, crypto, transport, adapter, attachment persistence, and read-only enforcement |
+| Bridge `npm test` | HTTP/SSE-to-ACP behavior, security boundaries, and harness fakes |
 
 ## The rule that matters most: every change lives on two backends
 
@@ -173,7 +219,7 @@ inside the app.
 ## Test against a real agent
 
 Every bug that reached a user came from a real agent behaving unlike the spec, not from a logic error
-the fakes could have caught. Observed with OMP 17.1.3:
+the fakes could have caught. These direct ACP observations were made against OMP 17.1.3:
 
 - it never echoes the prompt you submitted, so a deduplication scheme that assumes an echo silently
   ate the user's message;
@@ -195,66 +241,52 @@ The UI ships in English, Italian and Traditional Chinese, in one small module wi
 `test:i18n` enforces key parity, so a string added to one language and not the others fails the
 suite. Add all three.
 
-## Android packaging
+## Native packaging and release verification
 
-You do not need an Android SDK: pushing to `main` builds debug and release APK artifacts, and a `v*`
-tag publishes a release. Tagged builds fail rather than publishing unsigned when a signing secret is
-missing.
-
-One trap worth knowing. If you touch anything in `web/native-android/`, sync with:
+iOS packaging is a manual Mac/iPhone gate. `web/ios/` is generated by Capacitor and ignored, so a
+fresh checkout intentionally has no Xcode project. On a Mac:
 
 ```bash
-npm run cap:sync:android
+cd web
+npm install
+npm run build
+npm run cap:add:ios       # first generation only
+npm run cap:sync:ios
+open ios/App/App.xcodeproj
 ```
 
-A plain `npx cap sync android` does **not** copy those Java sources into the generated project, so
-your change is silently dropped and the app runs the previous version of the native plugin.
+Run `cap:add:ios` only when `web/ios/` does not exist. On every later native build, run
+`npm run build` followed by `npm run cap:sync:ios`; the project script copies `web/native-ios/` and
+updates the generated iOS metadata. A plain Capacitor sync does not perform those repository-specific
+steps.
 
-## Cutting a release
+In Xcode, select the **App** target, choose the development team and a bundle identifier accepted by
+it, select **Any iOS Device (arm64)**, then use **Product > Archive**. In Organizer choose
+**Distribute App > Custom > Development** and export the signed IPA. This repository has no App
+Store or TestFlight release workflow.
 
-Bump `version` in `web/package.json`, commit it as `chore: release vX.Y.Z`, then tag that commit and
-push both. Everything else — the version code, the Android metadata, the signed APK, the GitHub
-release — is derived from that one field by CI.
+Install that IPA with Sideloadly: connect and trust the iPhone, select it in Sideloadly, provide the
+IPA and signing Apple ID, and complete any sign-in, Developer Mode, or profile-trust prompts. The
+install remains valid only while its Apple signing profile is valid. Free Apple IDs commonly need a
+re-sign and reinstall every seven days; paid-account validity follows the generated profile.
 
-```bash
-git tag -a v2.4.0 --cleanup=verbatim -F release-notes.txt
-git push origin main && git push origin v2.4.0
-```
+### Manual Mac/iPhone verification matrix
 
-**`--cleanup=verbatim` is not optional.** Git's default cleanup strips every line that starts with
-`#` as a comment, which silently deletes both `##` headings out of the message below — the tag looks
-fine, and the release renders two bullet lists with nothing naming them. Check before pushing:
+An archive is not evidence that networking, Keychain, or Collab works. Record each applicable row in
+the PR or release notes; do not imply it passed unless it was exercised on the built IPA.
 
-```bash
-git tag -l --format='%(contents:body)' v2.4.0
-```
+| Area | Required manual result |
+|---|---|
+| Native synchronization | Generate/sync the project on a Mac, archive and export without hand-editing generated sources, install the IPA, and launch it on iOS 15 or newer. Re-smoke native `fetch` and SSE after every relevant Capacitor or iOS change. |
+| Direct bridge over LAN | Start the credentialed non-loopback OMP bridge with an explicit `--root`; on the iPhone connect using the host LAN address, create a session inside that root, select it, send a prompt and observe streamed output, stop an active turn, then interrupt/restore connectivity or background/foreground the app and confirm reconnection. |
+| Direct bridge over Tailscale | With Tailscale installed and authenticated separately on both devices, repeat the direct smoke using the host MagicDNS name or tailnet IP and the same bridge Basic Auth. This may be marked not applicable when the change is unrelated and LAN was exercised. |
+| Secure storage | Attach a disposable Collab bearer link, relaunch the app and confirm the attachment returns, then detach it, relaunch again, and confirm it stays removed. Bearer links must persist only through iOS Keychain, never web storage. |
+| Collab writable | Run OMP `/collab` in a disposable desktop session, manually paste its write-capable bearer link into **Attach OMP Collab**, observe live desktop output, and verify prompt, abort, and interactive reply controls. |
+| Collab read-only | Attach the room-key-only/read-only link, confirm live output still arrives, and confirm prompt, abort, and reply controls are absent. |
 
-**The tag annotation is the release notes.** CI publishes its body verbatim between its own
-`## Release` heading and the build notes, so write those two sections as bullets and nothing else:
-
-```
-Harness Remote v2.4.0
-
-## What's Changed
-
-* One line per user-visible change, most interesting first
-* No "by @someone", no pull request numbers
-
-## Contributors
-
-* **Special thanks to [@handle](https://github.com/handle)** (Real Name) — what they built, and why it stands out
-* [@handle](https://github.com/handle) (Real Name) — what they contributed
-```
-
-The first line is the subject and is dropped from the body, so it can repeat the version.
-
-**Credit contributors, not the merge.** GitHub's generated notes are switched off deliberately. They
-list one bullet per pull request ending in `by @<whoever pressed merge>`, which on this repo means
-the maintainer collects credit for work other people did — v2.3.0 read as though the maintainer had
-written the desktop layout. Keep the bullets; they are the right format. Just describe the change and
-stop there. Then name the people whose work is in the release, say what each contributed, and give
-the largest contribution a `Special thanks`. Anyone who wants it attributed commit by commit has the
-full changelog link that CI appends.
+For a release candidate, repeat the archive/export/Sideloadly flow from a clean generated `web/ios/`,
+run every automated gate above, complete the applicable manual rows on the installed IPA, and note
+the signing profile's expiration. No CI artifact substitutes for this verification.
 
 ## The bridge is a network service
 
@@ -267,7 +299,8 @@ them:
   browse and where a session may run. It is **not** a sandbox for the agent, which runs with full
   user privileges — do not describe it as one.
 - **CORS.** Off by default; each origin must be listed explicitly, because credentialed CORS cannot
-  use a wildcard.
+  use a wildcard. Ordinary Capacitor HTTP requests bypass browser CORS, but iOS SSE uses WebView
+  `fetch`, so bridge launches used by the IPA must allow exactly `capacitor://localhost`.
 
 ## Commits and pull requests
 
