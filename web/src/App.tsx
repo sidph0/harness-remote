@@ -3696,9 +3696,9 @@ function App() {
           
           {settingsNotice && (
             <div className={`notice ${settingsNotice.type} fade-in`}>
-              {settingsNotice.type === 'success' && '✓ '}
-              {settingsNotice.type === 'error' && '✗ '}
-              {settingsNotice.type === 'info' && 'ℹ '}
+              {!isNativeIOS && settingsNotice.type === 'success' && '✓ '}
+              {!isNativeIOS && settingsNotice.type === 'error' && '✗ '}
+              {!isNativeIOS && settingsNotice.type === 'info' && 'ℹ '}
               {settingsNotice.text}
             </div>
           )}
@@ -3829,7 +3829,7 @@ function App() {
           {/* The offline empty state already explains this and offers the two useful actions;
               repeating the raw transport error underneath is the second voice again. */}
           {runtimeError && !(isOffline && filteredSessions.length === 0) && (
-            <div className="error fade-in">✗ {runtimeError}</div>
+            <div className="error fade-in">{isNativeIOS ? runtimeError : `✗ ${runtimeError}`}</div>
           )}
 
           <JumpControls
@@ -3898,7 +3898,7 @@ function App() {
                 {t('sessions.useThisFolder')}
               </button>
             </div>
-            {pickerError && <div className="error fade-in">✗ {pickerError}</div>}
+            {pickerError && <div className="error fade-in">{isNativeIOS ? pickerError : `✗ ${pickerError}`}</div>}
             <div className="folder-list">
               {pickerLoading ? (
                 <div className="empty-state compact"><LoadingIcon size={28} /><p>{t('sessions.folderPickerLoading')}</p></div>
@@ -4038,7 +4038,10 @@ function App() {
           {todos.length > 0 && (
             <div className="todo-box">
               <div className="todo-header-row">
-                <h3><span style={{ marginRight: 'var(--space-2)' }}>📋</span>{t('todo.title')}</h3>
+                <h3>
+                  {!isNativeIOS && <span aria-hidden="true">📋</span>}
+                  {t('todo.title')}
+                </h3>
                 <button type="button" className="todo-toggle-btn" onClick={() => setTodosExpanded((value) => !value)} aria-expanded={todosExpanded} aria-controls="todo-items-content">
                   {todosExpanded ? t('todo.hide') : t('todo.show')}
                 </button>
@@ -4148,7 +4151,7 @@ function App() {
             </button>
           </div>}
 
-          {runtimeError && <div className="error fade-in">✗ {runtimeError}</div>}
+          {runtimeError && <div className="error fade-in">{isNativeIOS ? runtimeError : `✗ ${runtimeError}`}</div>}
         </main>
       )}
 
@@ -4491,12 +4494,12 @@ function App() {
 
               <h3>Key Features</h3>
               <ul>
-                <li>🔄 Real-time session monitoring</li>
-                <li>💬 Interactive chat interface</li>
-                <li>📋 Todo tracking display</li>
-                <li>⚡ Instant session control</li>
-                <li>🔔 Completion notifications</li>
-                <li>↕️ Jump to either end of a long conversation</li>
+                <li>{isNativeIOS ? 'Real-time session monitoring' : '🔄 Real-time session monitoring'}</li>
+                <li>{isNativeIOS ? 'Interactive chat interface' : '💬 Interactive chat interface'}</li>
+                <li>{isNativeIOS ? 'Todo tracking display' : '📋 Todo tracking display'}</li>
+                <li>{isNativeIOS ? 'Instant session control' : '⚡ Instant session control'}</li>
+                <li>{isNativeIOS ? 'Completion notifications' : '🔔 Completion notifications'}</li>
+                <li>{isNativeIOS ? 'Jump to either end of a long conversation' : '↕️ Jump to either end of a long conversation'}</li>
               </ul>
             </div>
           )}
@@ -4549,11 +4552,11 @@ function App() {
               <h3>Network Configuration</h3>
               
               <div className="network-modes">
-                <h4>🌐 LAN Mode (Recommended)</h4>
+                <h4>{isNativeIOS ? 'LAN Mode (Recommended)' : '🌐 LAN Mode (Recommended)'}</h4>
                 <p>Use your PC's local IP address for devices on the same network:</p>
                 <pre>Example: 192.168.1.61</pre>
                 
-                <h4>🌍 WAN Mode (Advanced)</h4>
+                <h4>{isNativeIOS ? 'WAN Mode (Advanced)' : '🌍 WAN Mode (Advanced)'}</h4>
                 <ul>
                   <li>Configure NAT/port forwarding on your router</li>
                   <li>Set up a VPN for secure remote access</li>
@@ -4562,14 +4565,14 @@ function App() {
               </div>
               
               <div className="security-checklist">
-                <h4>🔒 Security Requirements</h4>
+                <h4>{isNativeIOS ? 'Security Requirements' : '🔒 Security Requirements'}</h4>
                 <ul>
-                  <li>✅ Open TCP port 4096 in OS firewall</li>
-                  <li>✅ Configure router/NAT port forwarding</li>
-                  <li>✅ Use strong authentication passwords</li>
-                  <li>✅ Prefer TLS/HTTPS for external access</li>
-                  <li>✅ Restrict source IPs when possible</li>
-                  <li>⚠️ Never expose without authentication</li>
+                  <li>{isNativeIOS ? 'Open TCP port 4096 in OS firewall' : '✅ Open TCP port 4096 in OS firewall'}</li>
+                  <li>{isNativeIOS ? 'Configure router/NAT port forwarding' : '✅ Configure router/NAT port forwarding'}</li>
+                  <li>{isNativeIOS ? 'Use strong authentication passwords' : '✅ Use strong authentication passwords'}</li>
+                  <li>{isNativeIOS ? 'Prefer TLS/HTTPS for external access' : '✅ Prefer TLS/HTTPS for external access'}</li>
+                  <li>{isNativeIOS ? 'Restrict source IPs when possible' : '✅ Restrict source IPs when possible'}</li>
+                  <li>{isNativeIOS ? 'Never expose without authentication' : '⚠️ Never expose without authentication'}</li>
                 </ul>
               </div>
             </div>
@@ -4580,7 +4583,7 @@ function App() {
               <h3>Troubleshooting Guide</h3>
               
               <div className="troubleshooting-steps">
-                <h4>🔍 Connection Diagnostics</h4>
+                <h4>{isNativeIOS ? 'Connection Diagnostics' : '🔍 Connection Diagnostics'}</h4>
                 <ol>
                   <li><strong>Verify Server:</strong> Check if OpenCode is listening on port 4096</li>
                   <li><strong>Test Locally:</strong> Check health endpoint from the same machine</li>
@@ -4590,7 +4593,7 @@ function App() {
               </div>
               
               <div className="health-checks">
-                <h4>🩺 Health Check Commands</h4>
+                <h4>{isNativeIOS ? 'Health Check Commands' : '🩺 Health Check Commands'}</h4>
                 <div className="code-examples">
                   <h5>Local Machine:</h5>
                   <pre>curl -u opencode:your-password \
@@ -4603,7 +4606,7 @@ http://YOUR_PC_IP:4096/global/health</pre>
               </div>
               
               <div className="common-issues">
-                <h4>⚠️ Common Issues</h4>
+                <h4>{isNativeIOS ? 'Common Issues' : '⚠️ Common Issues'}</h4>
                 <ul>
                   <li><strong>CORS Errors:</strong> Add <code>--cors</code> flags to server</li>
                   <li><strong>Connection Timeout:</strong> Check firewall settings</li>
