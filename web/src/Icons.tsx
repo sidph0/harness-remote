@@ -363,6 +363,20 @@ export const MenuIcon = ({ className = "", size = 20 }: { className?: string; si
   </svg>
 )
 
+export const MoreIcon = ({ className = "", size = 20 }: { className?: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+    <circle cx="5" cy="12" r="1.75" />
+    <circle cx="12" cy="12" r="1.75" />
+    <circle cx="19" cy="12" r="1.75" />
+  </svg>
+)
+
+export const ChevronLeftIcon = ({ className = "", size = 20 }: { className?: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <path d="m15 18-6-6 6-6" />
+  </svg>
+)
+
 export const CloseIcon = ({ className = "", size = 20 }: { className?: string; size?: number }) => (
   <svg 
     width={size} 

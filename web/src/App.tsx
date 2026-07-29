@@ -38,6 +38,8 @@ import {
   RefreshIcon,
   OfflineIcon,
   PencilIcon,
+  MoreIcon,
+  ChevronLeftIcon,
   CloseIcon
 } from "./Icons"
 
@@ -1839,6 +1841,7 @@ function App() {
   const [reconnectGeneration, setReconnectGeneration] = useState(0)
   const [lastTestedConfigKey, setLastTestedConfigKey] = useState<string | null>(null)
   const [sessionToDelete, setSessionToDelete] = useState<SessionView | null>(null)
+  const [sessionForActions, setSessionForActions] = useState<SessionView | null>(null)
   const [renamingSessionID, setRenamingSessionID] = useState<string | null>(null)
   const [renameSource, setRenameSource] = useState<"list" | "header" | null>(null)
   const [renameValue, setRenameValue] = useState("")
@@ -2924,8 +2927,8 @@ function App() {
   // Android back: dismiss whatever is on top, then fall back to the session list,
   // and only leave the app from there. Reads state through a ref because the
   // handler is registered once and must not capture a stale view.
-  const backStateRef = useRef({ view, activeDetailSheet, sessionToDelete, renamingSessionID })
-  backStateRef.current = { view, activeDetailSheet, sessionToDelete, renamingSessionID }
+  const backStateRef = useRef({ view, activeDetailSheet, sessionForActions, sessionToDelete, renamingSessionID })
+  backStateRef.current = { view, activeDetailSheet, sessionForActions, sessionToDelete, renamingSessionID }
 
   useEffect(() => {
     let handle: PluginListenerHandle | undefined
@@ -2934,6 +2937,10 @@ function App() {
       const state = backStateRef.current
       if (state.sessionToDelete) {
         setSessionToDelete(null)
+        return
+      }
+      if (state.sessionForActions) {
+        setSessionForActions(null)
         return
       }
       if (state.renamingSessionID) {
@@ -3352,6 +3359,21 @@ function App() {
             <p title={session.directory}>{shortDirectory(session.directory)}</p>
           </div>
         </div>
+        {isNativeIOS && (collab || capabilities.sessionRename || capabilities.sessionDelete) && (
+          <button
+            type="button"
+            className="session-more-button"
+            onClick={(event) => {
+              event.stopPropagation()
+              setSessionForActions(session)
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            aria-label={`${t('action.actionsFallback')}: ${session.title}`}
+            title={t('action.actionsFallback')}
+          >
+            <MoreIcon size={20} />
+          </button>
+        )}
         <div className="session-stats">
           {(session.files > 0 || session.additions > 0 || session.deletions > 0) && (
             <span className="change-summary">
@@ -3366,25 +3388,27 @@ function App() {
           </span>
           <span className={`pill ${session.status}`}>{session.status}</span>
         </div>
-        <div className="inline-actions">
-          {collab ? (
-            <button className="btn-danger" onClick={(event) => { event.stopPropagation(); detachCollab(session.id).catch(() => undefined) }} disabled={collabMutationPending} title={t('collab.detach')}>
-              <TrashIcon size={16} />
-              {t('collab.detach')}
-            </button>
-          ) : capabilities.sessionRename && capabilities.sessionDelete && (
-            <>
-              <button className="btn-secondary" onClick={(event) => { event.stopPropagation(); startRename(session) }} title={t('session.renameTitle')} aria-label={t('session.renameTitle')}>
-                <PencilIcon size={16} />
-                {t('session.renameConfirm')}
-              </button>
-              <button className="btn-danger" onClick={(event) => { event.stopPropagation(); setSessionToDelete(session) }} title={t('sessions.delete')}>
+        {!isNativeIOS && (
+          <div className="inline-actions">
+            {collab ? (
+              <button className="btn-danger" onClick={(event) => { event.stopPropagation(); detachCollab(session.id).catch(() => undefined) }} disabled={collabMutationPending} title={t('collab.detach')}>
                 <TrashIcon size={16} />
-                {t('sessions.delete')}
+                {t('collab.detach')}
               </button>
-            </>
-          )}
-        </div>
+            ) : capabilities.sessionRename && capabilities.sessionDelete && (
+              <>
+                <button className="btn-secondary" onClick={(event) => { event.stopPropagation(); startRename(session) }} title={t('session.renameTitle')} aria-label={t('session.renameTitle')}>
+                  <PencilIcon size={16} />
+                  {t('session.renameConfirm')}
+                </button>
+                <button className="btn-danger" onClick={(event) => { event.stopPropagation(); setSessionToDelete(session) }} title={t('sessions.delete')}>
+                  <TrashIcon size={16} />
+                  {t('sessions.delete')}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </article>
     )
   }
@@ -3911,10 +3935,13 @@ function App() {
         <main className="panel detail fade-in">
           <div className="detail-topbar">
             {!isDesktop && (
-              <button className="btn-secondary" onClick={() => {
+              <button className="detail-back-button" onClick={() => {
                 setView("sessions")
                 requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }))
-              }}>{t('detail.backToSessions')}</button>
+              }}>
+                {isNativeIOS && <ChevronLeftIcon size={20} />}
+                {isNativeIOS ? t('nav.sessions') : t('detail.backToSessions')}
+              </button>
             )}
           </div>
           <div className="header-row detail-header">
@@ -4263,6 +4290,65 @@ function App() {
                 </div>
               </div>
             )}
+          </section>
+        </div>
+      )}
+
+      {isNativeIOS && sessionForActions && (
+        <div className="sheet-backdrop" role="presentation" onClick={() => setSessionForActions(null)}>
+          <section
+            className="bottom-sheet session-actions-sheet fade-in"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-actions-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sheet-handle" aria-hidden="true" />
+            <h3 id="session-actions-title">{sessionForActions.title}</h3>
+            <div className="session-action-list">
+              {collabClientsRef.current.has(sessionForActions.id) ? (
+                <button
+                  type="button"
+                  className="btn-danger"
+                  disabled={collabMutationPending}
+                  onClick={() => {
+                    if (!sessionForActions) return
+                    const id = sessionForActions.id
+                    setSessionForActions(null)
+                    detachCollab(id).catch(() => undefined)
+                  }}
+                >
+                  <TrashIcon size={18} />
+                  {t('collab.detach')}
+                </button>
+              ) : (
+                <>
+                  {capabilities.sessionRename && (
+                    <button type="button" onClick={() => {
+                      if (!sessionForActions) return
+                      const session = sessionForActions
+                      setSessionForActions(null)
+                      startRename(session)
+                    }}>
+                      <PencilIcon size={18} />
+                      {t('session.renameConfirm')}
+                    </button>
+                  )}
+                  {capabilities.sessionDelete && (
+                    <button type="button" className="btn-danger" onClick={() => {
+                      if (!sessionForActions) return
+                      const session = sessionForActions
+                      setSessionForActions(null)
+                      setSessionToDelete(session)
+                    }}>
+                      <TrashIcon size={18} />
+                      {t('sessions.delete')}
+                    </button>
+                  )}
+                </>
+              )}
+              <button type="button" autoFocus onClick={() => setSessionForActions(null)}>{t('session.cancel')}</button>
+            </div>
           </section>
         </div>
       )}
