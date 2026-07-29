@@ -4,6 +4,7 @@ web/node_modules/
 web/dist/
 web/ios/
 .superpowers/
+.worktrees/
 docs/superpowers/plans/
 web/*.tsbuildinfo
 *.tgz
