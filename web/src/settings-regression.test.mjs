@@ -8,8 +8,8 @@ const initialConfig = app.match(/function initialConfig\(\)[\s\S]*?\n\}/)
 assert.ok(initialConfig, 'initialConfig function should be present')
 assert.match(
   initialConfig[0],
-  /Capacitor\.getPlatform\(\)\s*===\s*["']ios["']\s*\?\s*["']omp["']\s*:\s*["']opencode["']/,
-  'the native iOS surface should default to OMP when no saved backend exists'
+  /resolveInitialBackend\(Capacitor\.getPlatform\(\),\s*storedBackend,\s*legacy\?\.backend\)/,
+  'initial configuration should delegate platform-aware backend selection to the tested resolver'
 )
 
 const testConnection = app.match(/async function testConnection[\s\S]*?async function refreshSessions/)

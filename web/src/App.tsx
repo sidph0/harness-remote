@@ -17,6 +17,7 @@ import { createTranslator, languageOptions, normalizeLanguage, type LanguageCode
 import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
 import { BACKEND_CLIENTS } from "./backendClient"
 import type { AgentOption, CommandInfo, DiffFile, FileEntry, FileStatusEntry, HarnessCapabilities, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
+import { activeSessionDirectory, loadVerifiedCapabilities, resolveInitialBackend, resumeDirectSession } from "./directSession"
 import {
   SettingsIcon,
   FolderIcon,
@@ -152,7 +153,7 @@ function readConfig(backend: ServerConfig["backend"]): ServerConfig {
 function initialConfig(): ServerConfig {
   const legacy = parseStoredConfig(localStorage.getItem(LEGACY_STORAGE_KEY), "opencode")
   const storedBackend = localStorage.getItem(ACTIVE_BACKEND_STORAGE_KEY)
-  const backend = storedBackend === "omp" || storedBackend === "opencode" || storedBackend === "pi" || storedBackend === "claude" ? storedBackend : legacy?.backend ?? (Capacitor.getPlatform() === "ios" ? "omp" : "opencode")
+  const backend = resolveInitialBackend(Capacitor.getPlatform(), storedBackend, legacy?.backend)
   const config = readConfig(backend)
   localStorage.setItem(BACKEND_STORAGE_KEYS[backend], JSON.stringify(config))
   localStorage.setItem(ACTIVE_BACKEND_STORAGE_KEY, backend)
@@ -1820,6 +1821,7 @@ function App() {
   const [eventStreamState, setEventStreamState] = useState<"idle" | "connecting" | "live" | "reconnecting" | "fallback">("idle")
   const [liveEventCount, setLiveEventCount] = useState(0)
   const [liveEventError, setLiveEventError] = useState<string | null>(null)
+  const [reconnectGeneration, setReconnectGeneration] = useState(0)
   const [lastTestedConfigKey, setLastTestedConfigKey] = useState<string | null>(null)
   const [sessionToDelete, setSessionToDelete] = useState<SessionView | null>(null)
   const [renamingSessionID, setRenamingSessionID] = useState<string | null>(null)
@@ -1859,6 +1861,7 @@ function App() {
   const latestMessageTimesRef = useRef(new Map<string, { sessionUpdated: number; activityTime: number }>())
   const selectedSessionRef = useRef<SessionView | null>(null)
   const eventStreamStateRef = useRef<"idle" | "connecting" | "live" | "reconnecting" | "fallback">("idle")
+  const eventSubscriptionRef = useRef<{ close(): void } | null>(null)
   /** Last time an SSE event arrived for a given session, used to spot sessions the stream isn't covering. */
   const lastEventBySessionRef = useRef(new Map<string, number>())
 
@@ -2177,7 +2180,7 @@ function App() {
       return
     }
     try {
-      const list = await api.listAgents(config, selectedSession?.directory ?? selectedNewSessionDirectory)
+      const list = await api.listAgents(config, activeSessionDirectory(selectedSession))
       setAgentOptions(list)
       setAgentLoadError(null)
       const saved = localStorage.getItem(AGENT_STORAGE_KEY) || selectedAgentID
@@ -2192,7 +2195,7 @@ function App() {
     }
   }
 
-  async function loadModels(sessionID = selectedSession?.id, directory = selectedSession?.directory ?? selectedNewSessionDirectory) {
+  async function loadModels(sessionID = selectedSession?.id, directory = activeSessionDirectory(selectedSession)) {
     if (!isValidServerConfig(config) || !capabilities.models) return
     const requestID = ++loadModelsRequestRef.current
     try {
@@ -2673,8 +2676,18 @@ function App() {
     }
   }
 
-  const resumeActionsRef = useRef({ refreshSessions, loadSelected })
-  resumeActionsRef.current = { refreshSessions, loadSelected }
+  const resumeActionsRef = useRef<Parameters<typeof resumeDirectSession>[0]>({
+    resetTransport() {
+      eventSubscriptionRef.current?.close()
+      eventSubscriptionRef.current = null
+      setReconnectGeneration((generation) => generation + 1)
+    },
+    refreshSessions,
+    selected: () => selectedSessionRef.current,
+    loadSelected
+  })
+  resumeActionsRef.current.refreshSessions = refreshSessions
+  resumeActionsRef.current.loadSelected = loadSelected
 
   useEffect(() => {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language)
@@ -2726,9 +2739,7 @@ function App() {
     let removed = false
     void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
       if (!isActive) return
-      resumeActionsRef.current.refreshSessions(true).catch(() => undefined)
-      const selected = selectedSessionRef.current
-      if (selected) resumeActionsRef.current.loadSelected(selected.id, selected.directory, true).catch(() => undefined)
+      resumeDirectSession(resumeActionsRef.current).catch(() => undefined)
     }).then((registered) => {
       if (removed) void registered.remove()
       else handle = registered
@@ -2818,14 +2829,22 @@ function App() {
       }
     }, 3500)
     return () => clearInterval(timer)
-  }, [capabilities.agents, capabilities.models, config.backend, config.host, config.port, config.username, config.password, selectedSession?.id, selectedNewSessionDirectory])
+  }, [capabilities.agents, capabilities.models, config.backend, config.host, config.port, config.username, config.password, selectedSession?.id])
 
   useEffect(() => {
     const fallback = DEFAULT_HARNESS_CAPABILITIES[config.backend]
     setCapabilities(fallback)
-    if (config.backend === "opencode" || !isValidServerConfig(config) || connectionState !== "connected") return
-    api.capabilities(config).then(setCapabilities).catch(() => setCapabilities(fallback))
-  }, [config.backend, config.host, config.port, config.username, config.password, connectionState])
+    if (config.backend === "opencode" || !isValidServerConfig(config)) return
+    let cancelled = false
+    loadVerifiedCapabilities(config, fallback, api)
+      .then((loaded) => {
+        if (!cancelled) setCapabilities(loaded)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [config.backend, config.host, config.port, config.username, config.password])
 
   useEffect(() => {
     if (!isValidServerConfig(config)) {
@@ -2916,11 +2935,13 @@ function App() {
           onStatus
         })
       : createFetchOpenCodeEventSubscription({ url, headers, onEvent, onStatus })
+    eventSubscriptionRef.current = subscription
     return () => {
-      if (refreshTimer !== undefined) clearTimeout(refreshTimer)
+      clearTimeout(refreshTimer)
       subscription.close()
+      if (eventSubscriptionRef.current === subscription) eventSubscriptionRef.current = null
     }
-  }, [config.backend, config.host, config.port, config.username, config.password])
+  }, [config.backend, config.host, config.port, config.username, config.password, reconnectGeneration])
 
   useEffect(() => {
     if (!hasConfiguredServer) {

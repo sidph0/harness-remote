@@ -1,10 +1,25 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { activeSessionDirectory } from './directSession.ts'
 
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 const i18n = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+
+const selectedSession = Object.freeze({ id: 'session-1', directory: '/sessions/immutable' })
+/** @type {string} */
+const typedDraftDirectory = '/draft/manual-entry'
+
+assert.equal(activeSessionDirectory(selectedSession), '/sessions/immutable', 'selected session should keep its immutable directory')
+assert.equal(activeSessionDirectory(null), undefined, 'no selected session should have no active directory')
+assert.equal(activeSessionDirectory(undefined), undefined, `typed draft ${typedDraftDirectory} must not become the active directory`)
+assert.equal(activeSessionDirectory.length, 1, 'draft directory must not be accepted by the active-session API')
+
+const defaultOptionLoaders = app.slice(app.indexOf('  async function loadAgents()'), app.indexOf('  async function loadSessionActivityTimes('))
+assert.ok(defaultOptionLoaders.includes('api.listAgents(config, activeSessionDirectory(selectedSession))'), 'default agent requests should use only the selected session directory')
+assert.ok(defaultOptionLoaders.includes('directory = activeSessionDirectory(selectedSession)'), 'default model requests should use only the selected session directory')
+assert.ok(!defaultOptionLoaders.includes('selectedNewSessionDirectory'), 'manual draft directory must not leak into default model or agent requests')
 
 assert.ok(api.includes('listModels(config: ServerConfig'), 'API should expose configured OpenCode models')
 assert.ok(api.includes('withDirectory("/config/providers"'), 'model list should use official /config/providers with directory scoping')

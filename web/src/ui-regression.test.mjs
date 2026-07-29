@@ -162,7 +162,7 @@ assert.ok(
   'the app should only exit from the session list'
 )
 
-assert.ok(app.includes('api.capabilities(config).then(setCapabilities)'), 'bridge capabilities must be loaded from the selected harness')
+assert.ok(app.includes('loadVerifiedCapabilities(config, fallback, api)'), 'bridge capabilities must be health-verified before loading')
 for (const capability of ['agents', 'models', 'todos', 'diff', 'questions', 'sessionRename', 'sessionDelete']) {
   assert.ok(app.includes(`capabilities.${capability}`), `${capability} UI must be capability-driven`)
 }
