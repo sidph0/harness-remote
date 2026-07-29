@@ -2482,9 +2482,9 @@ function App() {
     const composerStyles = window.getComputedStyle(composer)
     const composerBottom = Number.parseFloat(composerStyles.bottom) || 0
     const clearance = Math.ceil(composerRect.height + composerBottom + 16)
-    // Scoped to the wrap rather than the list itself so the jump buttons, which are siblings of the
-    // list, can sit on top of the same clearance the list reserves for the composer.
-    const scope = container.parentElement ?? container
+    // Store the measurement on the detail flow so the transcript, jump controls, bottom sentinel,
+    // and final native-iOS spacer all inherit the same composer clearance.
+    const scope = container.closest<HTMLElement>(".detail") ?? container.parentElement ?? container
     scope.style.setProperty("--chat-bottom-clearance", `${clearance}px`)
   }
 
