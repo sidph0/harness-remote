@@ -107,3 +107,18 @@ test("enables safe request diagnostics explicitly", () => {
   assert.equal(parseConfig(["--log-requests"], {}).logRequests, true)
   assert.equal(parseConfig([], { OMP_BRIDGE_LOG_REQUESTS: "1" }).logRequests, true)
 })
+
+test("composes fresh host capabilities without mutating harness profiles", async () => {
+  const profiles = await import("../src/harness-profiles.js")
+  assert.equal(typeof profiles.harnessCapabilities, "function")
+
+  const linux = profiles.harnessCapabilities("omp", { hostPlatform: "linux", directoryPresets: [] })
+  const macos = profiles.harnessCapabilities("omp", { hostPlatform: "macos", directoryPresets: [] })
+
+  assert.notStrictEqual(linux, macos)
+  assert.equal(linux.models, true)
+  assert.equal(linux.hostPlatform, "linux")
+  assert.equal(macos.hostPlatform, "macos")
+  assert.equal(profiles.harnessProfile("omp").capabilities.hostPlatform, undefined)
+  assert.equal(profiles.harnessProfile("omp").capabilities.directoryPresets, undefined)
+})

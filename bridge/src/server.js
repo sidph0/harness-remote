@@ -1,9 +1,10 @@
 import http from "node:http"
 import { timingSafeEqual } from "node:crypto"
-import { readdir, realpath } from "node:fs/promises"
+import { readdir } from "node:fs/promises"
 import path from "node:path"
 import { AcpService } from "./acp-service.js"
-import { harnessProfile } from "./harness-profiles.js"
+import { allowedDirectory, hostDirectoryInfo } from "./directory-presets.js"
+import { harnessCapabilities } from "./harness-profiles.js"
 
 
 function writeJSON(response, status, body) {
@@ -55,14 +56,6 @@ function writeSSE(response, event, data) {
   response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 }
 
-async function allowedDirectory(candidate, config) {
-  const resolved = await realpath(candidate)
-  const roots = await Promise.all((config.roots.length ? config.roots : [process.cwd()]).map((root) => realpath(root)))
-  if (!roots.some((root) => resolved === root || !path.relative(root, resolved).startsWith(`..${path.sep}`) && path.relative(root, resolved) !== "..")) {
-    throw new Error("Directory is outside the configured --root boundary")
-  }
-  return resolved
-}
 
 function modelWireName(model) {
   if (!model) return undefined
@@ -104,7 +97,6 @@ function providersResponse(models, fallbackProviderID) {
 
 export function createBridgeServer({ config, acp, serviceOptions }) {
   const backend = config.backend ?? "omp"
-  const profile = harnessProfile(backend)
   const service = new AcpService(acp, serviceOptions)
   return http.createServer(async (request, response) => {
     applyCorsHeaders(request, response, config)
@@ -132,7 +124,7 @@ export function createBridgeServer({ config, acp, serviceOptions }) {
         return
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
-        writeJSON(response, 200, profile.capabilities)
+        writeJSON(response, 200, harnessCapabilities(backend, await hostDirectoryInfo({ roots: config.roots })))
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/events" || url.pathname === "/global/event")) {

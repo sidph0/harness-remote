@@ -78,6 +78,10 @@ export const HARNESS_PROFILES = {
   }
 }
 
+export function harnessCapabilities(id, hostInfo) {
+  return { ...harnessProfile(id).capabilities, ...hostInfo }
+}
+
 export function harnessProfile(id) {
   const profile = HARNESS_PROFILES[id]
   if (!profile) throw new Error(`Unsupported backend: ${id}`)

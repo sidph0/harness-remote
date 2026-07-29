@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -289,6 +289,20 @@ function jsonHeaders() {
   return { ...authHeaders(), "content-type": "application/json" }
 }
 
+async function withHomeDirectory(home, callback) {
+  const original = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
+  process.env.HOME = home
+  process.env.USERPROFILE = home
+  try {
+    return await callback()
+  } finally {
+    for (const [name, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+}
+
 async function readJSON(baseURL, path, init) {
   const response = await fetch(`${baseURL}${path}`, { headers: authHeaders(), ...init })
   return response.json()
@@ -548,20 +562,68 @@ test("reports the configured ACP backend", async () => {
   }
 })
 
-test("reports capabilities from the selected harness profile", async () => {
-  const omp = await startServer({ backend: "omp" })
-  const pi = await startServer({ backend: "pi" })
+test("reports host platform and root-approved directory presets with harness capabilities", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "harness-remote-home-"))
+  const names = ["Downloads", "Documents", "Desktop"]
+  await Promise.all(names.map((name) => mkdir(path.join(home, name))))
+
   try {
-    const ompCapabilities = await readJSON(omp.baseURL, "/v1/capabilities")
-    const piCapabilities = await readJSON(pi.baseURL, "/v1/capabilities")
-    assert.equal(ompCapabilities.models, true)
-    assert.equal(ompCapabilities.todos, true)
-    assert.equal(ompCapabilities.commands, false)
-    assert.equal(piCapabilities.models, true)
-    assert.equal(piCapabilities.todos, false)
-    assert.equal(piCapabilities.commands, true)
+    await withHomeDirectory(home, async () => {
+      const omp = await startServer({ backend: "omp", roots: [home] })
+      const pi = await startServer({ backend: "pi", roots: [home] })
+      try {
+        const ompCapabilities = await readJSON(omp.baseURL, "/v1/capabilities")
+        const piCapabilities = await readJSON(pi.baseURL, "/v1/capabilities")
+        const hostPlatform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux"
+        const directoryPresets = await Promise.all(names.map(async (label) => ({
+          id: label.toLowerCase(),
+          label,
+          path: await realpath(path.join(home, label))
+        })))
+
+        assert.equal(ompCapabilities.hostPlatform, hostPlatform)
+        assert.deepEqual(ompCapabilities.directoryPresets, directoryPresets)
+        assert.equal(ompCapabilities.models, true)
+        assert.equal(ompCapabilities.todos, true)
+        assert.equal(ompCapabilities.commands, false)
+        assert.equal(piCapabilities.models, true)
+        assert.equal(piCapabilities.todos, false)
+        assert.equal(piCapabilities.commands, true)
+      } finally {
+        await Promise.all([omp.close(), pi.close()])
+      }
+    })
   } finally {
-    await Promise.all([omp.close(), pi.close()])
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test("filters missing and outside-root directory presets while file browsing stays root-safe", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "harness-remote-filtered-home-"))
+  const downloads = path.join(home, "Downloads")
+  const desktop = path.join(home, "Desktop")
+  await Promise.all([mkdir(downloads), mkdir(desktop)])
+
+  try {
+    await withHomeDirectory(home, async () => {
+      const bridge = await startServer({ backend: "omp", roots: [downloads] })
+      try {
+        const capabilities = await readJSON(bridge.baseURL, "/v1/capabilities")
+        assert.deepEqual(capabilities.directoryPresets, [{
+          id: "downloads",
+          label: "Downloads",
+          path: await realpath(downloads)
+        }])
+
+        const outside = await fetch(`${bridge.baseURL}/file?path=${encodeURIComponent(desktop)}`, { headers: authHeaders() })
+        assert.equal(outside.status, 400)
+        assert.match((await outside.json()).error, /configured --root boundary/)
+      } finally {
+        await bridge.close()
+      }
+    })
+  } finally {
+    await rm(home, { recursive: true, force: true })
   }
 })
 
