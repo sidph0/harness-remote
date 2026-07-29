@@ -4,6 +4,14 @@ import { readFileSync } from 'node:fs'
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const i18n = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
 
+const initialConfig = app.match(/function initialConfig\(\)[\s\S]*?\n\}/)
+assert.ok(initialConfig, 'initialConfig function should be present')
+assert.match(
+  initialConfig[0],
+  /Capacitor\.getPlatform\(\)\s*===\s*["']ios["']\s*\?\s*["']omp["']\s*:\s*["']opencode["']/,
+  'the native iOS surface should default to OMP when no saved backend exists'
+)
+
 const testConnection = app.match(/async function testConnection[\s\S]*?async function refreshSessions/)
 assert.ok(testConnection, 'testConnection function should be present')
 assert.equal(testConnection[0].includes('setView("sessions")'), false, 'Test Connection must not navigate away from settings')

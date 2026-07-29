@@ -4,7 +4,7 @@ import { Capacitor, type PluginListenerHandle } from "@capacitor/core"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { api, isMixedContentBlocked, isValidServerConfig } from "./api"
-import { ACTIVE_BACKEND_STORAGE_KEY, BACKEND_STORAGE_KEYS, LEGACY_STORAGE_KEY } from "./storageKeys"
+import { ACTIVE_BACKEND_STORAGE_KEY, BACKEND_STORAGE_KEYS, LEGACY_STORAGE_KEY, NEW_SESSION_DIRECTORY_STORAGE_KEY } from "./storageKeys"
 import {
   createFetchOpenCodeEventSubscription,
   createNativeOpenCodeEventSubscription,
@@ -45,7 +45,6 @@ const AGENT_STORAGE_KEY = "opencode.remote.agent"
 const THEME_STORAGE_KEY = "opencode.remote.theme"
 const SIDEBAR_WIDTH_STORAGE_KEY = "opencode.remote.desktopSidebarWidth"
 const MAIN_WIDTH_STORAGE_KEY = "opencode.remote.desktopMainWidth"
-const NEW_SESSION_DIRECTORY_STORAGE_KEY = "opencode.remote.newSessionDirectory"
 
 type Translator = ReturnType<typeof createTranslator>
 
@@ -153,7 +152,7 @@ function readConfig(backend: ServerConfig["backend"]): ServerConfig {
 function initialConfig(): ServerConfig {
   const legacy = parseStoredConfig(localStorage.getItem(LEGACY_STORAGE_KEY), "opencode")
   const storedBackend = localStorage.getItem(ACTIVE_BACKEND_STORAGE_KEY)
-  const backend = storedBackend === "omp" || storedBackend === "opencode" || storedBackend === "pi" || storedBackend === "claude" ? storedBackend : legacy?.backend ?? "opencode"
+  const backend = storedBackend === "omp" || storedBackend === "opencode" || storedBackend === "pi" || storedBackend === "claude" ? storedBackend : legacy?.backend ?? (Capacitor.getPlatform() === "ios" ? "omp" : "opencode")
   const config = readConfig(backend)
   localStorage.setItem(BACKEND_STORAGE_KEYS[backend], JSON.stringify(config))
   localStorage.setItem(ACTIVE_BACKEND_STORAGE_KEY, backend)
@@ -1695,6 +1694,7 @@ const MessagesPane = memo(function MessagesPane({
 function App() {
   type NoticeType = "info" | "success" | "error"
   type ThemePreference = "system" | "light" | "dark"
+  const isNativeIOS = Capacitor.getPlatform() === "ios"
   const [config, setConfig] = useState<ServerConfig>(initialConfig)
   const [language, setLanguage] = useState<LanguageCode>(() => {
     return normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY) || navigator.language)
@@ -2076,6 +2076,10 @@ function App() {
       if (health.backend && health.backend !== configToTest.backend) {
         throw new Error(`Expected ${backendDisplayName(configToTest.backend)} but reached ${backendDisplayName(health.backend)}`)
       }
+      if (configToTest.backend !== "opencode") {
+        const fallback = DEFAULT_HARNESS_CAPABILITIES[configToTest.backend]
+        setCapabilities(await api.capabilities(configToTest).catch(() => fallback))
+      }
       setConnectedVersion(health.version)
       setLastTestedConfigKey(configKey(configToTest))
       setSettingsNotice({ type: "success", text: t('settings.testedNotSaved', { version: health.version }) })
@@ -2413,11 +2417,20 @@ function App() {
     setRuntimeError(null)
     setShowNewSessionPicker(true)
     setPickerError(null)
-    try {
-      const pathInfo = await api.loadPath(config, selectedNewSessionDirectory)
-      await browseNewSessionDirectory(selectedNewSessionDirectory ?? pathInfo.directory)
-    } catch (err) {
-      setPickerError((err as Error).message)
+    if (config.backend === "opencode") {
+      try {
+        const pathInfo = await api.loadPath(config, selectedNewSessionDirectory)
+        await browseNewSessionDirectory(selectedNewSessionDirectory ?? pathInfo.directory)
+      } catch (err) {
+        setPickerError((err as Error).message)
+      }
+      return
+    }
+    const initialPath = capabilities.directoryPresets?.[0]?.path
+    if (initialPath) await browseNewSessionDirectory(initialPath)
+    else {
+      setPickerPath("")
+      setPickerItems([])
     }
   }
 
@@ -2436,7 +2449,7 @@ function App() {
     setRuntimeError(null)
     setPickerError(null)
     try {
-      if (directory) {
+      if (config.backend === "opencode" && directory) {
         const pathInfo = await api.loadPath(config, directory)
         if (!isProjectDirectory(pathInfo)) {
           throw new Error(t('sessions.projectDirectoryInvalid', { directory }))
@@ -2660,6 +2673,9 @@ function App() {
     }
   }
 
+  const resumeActionsRef = useRef({ refreshSessions, loadSelected })
+  resumeActionsRef.current = { refreshSessions, loadSelected }
+
   useEffect(() => {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language)
   }, [language])
@@ -2703,6 +2719,25 @@ function App() {
     }
   }, [])
 
+
+  useEffect(() => {
+    if (!isNativeIOS) return
+    let handle: PluginListenerHandle | undefined
+    let removed = false
+    void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (!isActive) return
+      resumeActionsRef.current.refreshSessions(true).catch(() => undefined)
+      const selected = selectedSessionRef.current
+      if (selected) resumeActionsRef.current.loadSelected(selected.id, selected.directory, true).catch(() => undefined)
+    }).then((registered) => {
+      if (removed) void registered.remove()
+      else handle = registered
+    })
+    return () => {
+      removed = true
+      void handle?.remove()
+    }
+  }, [isNativeIOS])
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
 
@@ -2788,9 +2823,9 @@ function App() {
   useEffect(() => {
     const fallback = DEFAULT_HARNESS_CAPABILITIES[config.backend]
     setCapabilities(fallback)
-    if (config.backend === "opencode" || !isValidServerConfig(config)) return
+    if (config.backend === "opencode" || !isValidServerConfig(config) || connectionState !== "connected") return
     api.capabilities(config).then(setCapabilities).catch(() => setCapabilities(fallback))
-  }, [config.backend, config.host, config.port, config.username, config.password])
+  }, [config.backend, config.host, config.port, config.username, config.password, connectionState])
 
   useEffect(() => {
     if (!isValidServerConfig(config)) {
@@ -3280,6 +3315,7 @@ function App() {
             </select>
           </label>
           
+          {!isNativeIOS && (
           <label htmlFor="backend">
             {t('settings.backend')}
             <select
@@ -3296,6 +3332,7 @@ function App() {
               <option value="claude">Claude Code (ACP bridge)</option>
             </select>
           </label>
+          )}
 
           <label htmlFor="host" className={draftBlockedByMixedContent ? "field-row-span" : undefined}>
             {t('settings.host')}
@@ -3517,16 +3554,48 @@ function App() {
           >
             <h2 id="new-session-title">{t('sessions.newSessionTitle')}</h2>
             <p className="subtle">{t('sessions.projectDirectoryDefault')}</p>
-            <div className="folder-picker-current">
-              <span>{t('sessions.projectDirectoryLabel')}</span>
-              <strong>{pickerPath || t('detail.loadingProject')}</strong>
-            </div>
+            <label htmlFor="new-session-directory">
+              {t('sessions.projectDirectoryLabel')}
+              <input
+                id="new-session-directory"
+                value={newSessionDirectory}
+                onChange={(event) => setNewSessionDirectory(event.target.value)}
+                placeholder={t('sessions.projectDirectoryPlaceholder')}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </label>
+            {capabilities.directoryPresets && capabilities.directoryPresets.length > 0 && (
+              <div className="inline-actions">
+                {capabilities.directoryPresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setNewSessionDirectory(preset.path)
+                      browseNewSessionDirectory(preset.path).catch(() => undefined)
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="inline-actions">
               <button type="button" className="btn-secondary" onClick={() => createSession("").catch(() => undefined)} disabled={creatingSession}>
                 {t('sessions.useServerDefault')}
               </button>
-              <button type="button" className="btn-primary" onClick={() => createSession(pickerPath).catch(() => undefined)} disabled={creatingSession || !pickerPath}>
+              <button type="button" className="btn-primary" onClick={() => createSession().catch(() => undefined)} disabled={creatingSession || !selectedNewSessionDirectory}>
                 {creatingSession ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
+                {t('sessions.new')}
+              </button>
+            </div>
+            <div className="folder-picker-current">
+              <strong>{pickerPath || t('detail.loadingProject')}</strong>
+              <button type="button" className="btn-secondary" onClick={() => createSession(pickerPath).catch(() => undefined)} disabled={creatingSession || !pickerPath}>
                 {t('sessions.useThisFolder')}
               </button>
             </div>

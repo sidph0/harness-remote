@@ -1,6 +1,7 @@
 /** Storage keys are shared with the crash-recovery reset, so they live outside App.tsx. */
 export const LEGACY_STORAGE_KEY = "opencode.remote.server"
 export const ACTIVE_BACKEND_STORAGE_KEY = "opencode.remote.backend"
+export const NEW_SESSION_DIRECTORY_STORAGE_KEY = "opencode.remote.newSessionDirectory"
 export const BACKEND_STORAGE_KEYS = {
   opencode: "opencode.remote.server.opencode",
   omp: "opencode.remote.server.omp",
@@ -18,5 +19,5 @@ export const SERVER_STORAGE_KEYS = [
   BACKEND_STORAGE_KEYS.claude,
   "opencode.remote.model",
   "opencode.remote.agent",
-  "opencode.remote.newSessionDirectory"
+  NEW_SESSION_DIRECTORY_STORAGE_KEY
 ]

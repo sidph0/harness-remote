@@ -1,5 +1,13 @@
 export type BackendKind = "opencode" | "omp" | "pi" | "claude"
 
+export type HostPlatform = "windows" | "macos" | "linux"
+
+export type DirectoryPreset = {
+  id: string
+  label: string
+  path: string
+}
+
 export type ServerConfig = {
   backend: BackendKind
   host: string
@@ -22,6 +30,8 @@ export type HarnessCapabilities = {
   commands: boolean
   sessionRename: boolean
   sessionDelete: boolean
+  hostPlatform?: HostPlatform
+  directoryPresets?: DirectoryPreset[]
 }
 
 export type HealthResponse = {

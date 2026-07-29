@@ -2,6 +2,28 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { streamURL } from './opencode-events.ts'
 import { baseUrl, isMixedContentBlocked, isValidServerConfig } from './serverConfig.ts'
+import { DEFAULT_HARNESS_CAPABILITIES } from './backendCapabilities.ts'
+
+const types = readFileSync(new URL('./types.ts', import.meta.url), 'utf8')
+
+assert.match(
+  readFileSync(new URL('./App.tsx', import.meta.url), 'utf8'),
+  /port:\s*backend\s*===\s*["']opencode["']\s*\?\s*4096\s*:\s*4097/,
+  'OMP direct connections must keep the bridge default port 4097'
+)
+
+const capabilityNames = [
+  'sessions', 'prompt', 'abort', 'streaming', 'models', 'agents', 'todos',
+  'diff', 'filesystemBrowser', 'questions', 'commands', 'sessionRename', 'sessionDelete'
+]
+for (const [backend, capabilities] of Object.entries(DEFAULT_HARNESS_CAPABILITIES)) {
+  for (const name of capabilityNames) {
+    assert.equal(typeof capabilities[name], 'boolean', `${backend}.${name} must remain a boolean capability`)
+  }
+}
+assert.match(types, /export\s+type\s+HostPlatform\s*=\s*["']windows["']\s*\|\s*["']macos["']\s*\|\s*["']linux["']\s*;?/, 'capabilities should declare the named host platform type')
+assert.match(types, /export\s+type\s+DirectoryPreset\s*=\s*\{\s*id\s*:\s*string\s*;?\s*label\s*:\s*string\s*;?\s*path\s*:\s*string\s*;?\s*\}/, 'capabilities should declare the named directory preset type')
+assert.match(types, /export\s+type\s+HarnessCapabilities\s*=\s*\{(?=[^}]*hostPlatform\?\s*:\s*HostPlatform\s*;?)(?=[^}]*directoryPresets\?\s*:\s*DirectoryPreset\[\]\s*;?)[^}]*\}/s, 'capabilities should optionally expose the named host platform and directory preset types')
 
 const config = (host, port = 4096) => ({ backend: 'opencode', host, port, username: 'opencode', password: 'secret' })
 
