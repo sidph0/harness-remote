@@ -73,7 +73,7 @@ Keep this PowerShell window open while using the app:
 Set-Location C:\path\to\harness-remote
 $env:HARNESS_REMOTE_USERNAME = "omp"
 $env:HARNESS_REMOTE_PASSWORD = "<bridge-password>"
-npx --yes .\bridge `
+node .\bridge\src\cli.js `
   --host 0.0.0.0 `
   --port 4097 `
   --root "$HOME\Software" `
@@ -105,15 +105,65 @@ In Harness Remote:
 7. Select an allowed directory and create a session.
 8. Send a prompt, confirm streaming, and test **Abort**.
 
-## 5. Optional Tailscale connection
+## 5. Set up Tailscale for remote access
 
-If the devices are not on the same Wi-Fi:
+Tailscale creates a private network between the Windows host and iPhone. The friend's Mac is not needed for this step.
 
-1. Install Tailscale on Windows and iPhone.
-2. Sign in to the same tailnet on both devices.
-3. Run `tailscale ip -4` on Windows.
-4. Use that address, or the Windows MagicDNS name, as the app host.
-5. Keep Basic Auth enabled. Tailscale does not replace the bridge password.
+### Install Tailscale on Windows 11
+
+1. Download Tailscale for Windows from [tailscale.com/download/windows](https://tailscale.com/download/windows).
+2. Run the installer.
+3. Open Tailscale from the Windows system tray.
+4. Sign in with the account that will own the tailnet.
+5. Confirm that Tailscale shows **Connected**.
+
+In PowerShell, verify the Windows Tailscale address:
+
+```powershell
+tailscale status
+tailscale ip -4
+```
+
+The address normally starts with `100.`. Keep it for the iPhone app.
+
+### Install Tailscale on the iPhone
+
+1. Install Tailscale from the [App Store](https://apps.apple.com/us/app/tailscale/id1470499037).
+2. Open it and sign in with the same account used on Windows.
+3. Allow the VPN configuration when iOS asks.
+4. Confirm the iPhone appears in the same tailnet as the Windows computer.
+5. Leave Tailscale connected while using Harness Remote.
+
+### Allow the bridge through Windows Firewall
+
+The existing Private profile rule may not cover the Tailscale adapter. Run PowerShell as Administrator and inspect the adapter:
+
+```powershell
+Get-NetAdapter | Where-Object Name -Like "*Tailscale*"
+```
+
+If the Tailscale adapter is blocked, allow TCP `4097` for the adapter shown by that command. The simplest rule is:
+
+```powershell
+New-NetFirewallRule -DisplayName "Harness Remote Tailscale Bridge" -Direction Inbound -Protocol TCP -LocalPort 4097 -Action Allow -Profile Any
+```
+
+Basic Auth still protects the bridge. Do not remove the bridge username and password.
+
+### Connect through Tailscale
+
+1. Start the bridge with `--host 0.0.0.0` as shown above.
+2. Keep the bridge PowerShell window open.
+3. Keep Tailscale connected on Windows and iPhone.
+4. Open Harness Remote on the iPhone.
+5. In **Settings**, set **Host** to the Windows Tailscale IPv4 address from `tailscale ip -4`.
+6. Set **Port** to `4097`.
+7. Enter username `omp` and the bridge password.
+8. Tap **Test Connection**.
+
+Do not enter `0.0.0.0` in the app. It is only the bridge's listening address. The app must use the specific Windows Tailscale address, usually a `100.x.x.x` address.
+
+If the connection fails, first test the local bridge on Windows, then check Tailscale status on both devices, the Windows Firewall rule, and the Windows Tailscale IP.
 
 ## 6. Optional desktop Collab attachment
 
