@@ -2992,6 +2992,11 @@ button.btn-icon.compact {
   padding-inline: 0;
 }
 
+.ios-native .detail::after {
+  content: "";
+  flex: 0 0 var(--chat-bottom-clearance, 138px);
+}
+
 .ios-native .detail-topbar {
   min-height: 44px;
   padding: 0 0.5rem;
@@ -3049,12 +3054,16 @@ button.btn-icon.compact {
 .ios-native .messages {
   gap: 0.65rem;
   overflow-y: visible;
-  scroll-padding-bottom: var(--chat-bottom-clearance, 138px);
-  padding: 0 1rem var(--chat-bottom-clearance, 138px);
+  padding: 0 1rem;
 }
 
 .ios-native .jump-controls {
   position: fixed;
+}
+
+.ios-native .jump-button {
+  width: 44px;
+  height: 44px;
 }
 
 .ios-native .jump-controls--page {
