@@ -1732,13 +1732,17 @@ function App() {
   })
   // Desktop gets a persistent left sidebar instead of the mobile top bar/bottom nav; this mirrors
   // the existing 780px CSS breakpoint so JS layout and stylesheet layout never disagree.
-  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MEDIA_QUERY).matches)
+  const [isDesktop, setIsDesktop] = useState(() => !isNativeIOS && window.matchMedia(DESKTOP_MEDIA_QUERY).matches)
   useEffect(() => {
+    if (isNativeIOS) {
+      setIsDesktop(false)
+      return
+    }
     const query = window.matchMedia(DESKTOP_MEDIA_QUERY)
     const onChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches)
     query.addEventListener("change", onChange)
     return () => query.removeEventListener("change", onChange)
-  }, [])
+  }, [isNativeIOS])
   // On desktop the sidebar always shows sessions, so the main pane falls back to the chat view
   // instead of duplicating the session list there.
   const mainView = isDesktop && view === "sessions" ? "detail" : view
@@ -2987,16 +2991,16 @@ function App() {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
 
     function applyThemePreference() {
-      const resolvedTheme = theme === "system" && mediaQuery.matches ? "dark" : theme === "dark" ? "dark" : "light"
+      const resolvedTheme = isNativeIOS ? "dark" : theme === "system" && mediaQuery.matches ? "dark" : theme === "dark" ? "dark" : "light"
       document.documentElement.dataset.theme = resolvedTheme
       document.documentElement.style.colorScheme = resolvedTheme
     }
 
-    localStorage.setItem(THEME_STORAGE_KEY, theme)
+    if (!isNativeIOS) localStorage.setItem(THEME_STORAGE_KEY, theme)
     applyThemePreference()
     mediaQuery.addEventListener("change", applyThemePreference)
     return () => mediaQuery.removeEventListener("change", applyThemePreference)
-  }, [theme])
+  }, [isNativeIOS, theme])
 
   useEffect(() => {
     localStorage.setItem(NEW_SESSION_DIRECTORY_STORAGE_KEY, newSessionDirectory)
@@ -3390,11 +3394,11 @@ function App() {
     { view: "detail" as const, label: t('nav.detail'), icon: <ChatIcon size={19} />, disabled: !selectedSession },
     { view: "settings" as const, label: t('nav.settings'), icon: <SettingsIcon size={19} />, disabled: false },
     { view: "help" as const, label: t('nav.help'), icon: <HelpIcon size={19} />, disabled: false }
-  ]
+  ].filter((item) => !isNativeIOS || item.view !== "detail")
 
   return (
-    <div className={`app-shell${isDesktop ? " app-shell-desktop" : ""}`}>
-      {!isDesktop && (
+    <div className={`app-shell${isNativeIOS ? " ios-native" : ""}${isDesktop ? " app-shell-desktop" : ""}`}>
+      {!isDesktop && !isNativeIOS && (
         <header className="top-nav fade-in">
           <div className="brand-section">
             <div className="brand-title">
@@ -3538,6 +3542,7 @@ function App() {
             </select>
           </label>
 
+          {!isNativeIOS && (
           <label htmlFor="theme">
             {t('settings.theme')}
             <select
@@ -3550,6 +3555,7 @@ function App() {
               <option value="dark">{t('settings.themeDark')}</option>
             </select>
           </label>
+          )}
           
           {!isNativeIOS && (
           <label htmlFor="backend">
