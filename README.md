@@ -351,4 +351,4 @@ docs/DEPENDENCIES.md    Protocol and dependency assumptions
 CONTRIBUTING.md         Contributor setup and verification details
 ```
 
-For protocol assumptions, read [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md). For contribution rules and the complete manual iPhone matrix, read [CONTRIBUTING.md](CONTRIBUTING.md). The historical OMP integration notes are in [OMP-INTEGRATION-PLAN.md](OMP-INTEGRATION-PLAN.md).
+For the shortest setup path, read [iPhone + Windows 11 Quick Start](docs/IOS-WINDOWS-QUICK-START.md). For protocol assumptions, read [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md). For contribution rules and the complete manual iPhone matrix, read [CONTRIBUTING.md](CONTRIBUTING.md). The historical OMP integration notes are in [OMP-INTEGRATION-PLAN.md](OMP-INTEGRATION-PLAN.md).
