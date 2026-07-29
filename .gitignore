@@ -3,5 +3,7 @@ build/
 web/node_modules/
 web/dist/
 web/ios/
+.superpowers/
+docs/superpowers/plans/
 web/*.tsbuildinfo
 *.tgz
