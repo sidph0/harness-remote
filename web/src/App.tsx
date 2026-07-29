@@ -1846,6 +1846,14 @@ function App() {
   const [renameSource, setRenameSource] = useState<"list" | "header" | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const renameInputRef = useRef<HTMLInputElement | null>(null)
+  const sessionActionsTriggerRef = useRef<HTMLButtonElement | null>(null)
+
+  function dismissSessionActions(restoreFocus = true) {
+    const trigger = sessionActionsTriggerRef.current
+    sessionActionsTriggerRef.current = null
+    setSessionForActions(null)
+    if (restoreFocus) requestAnimationFrame(() => trigger?.focus())
+  }
   const [activeDetailSheet, setActiveDetailSheet] = useState<null | "ai" | "details">(null)
   const messagesRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
@@ -2940,7 +2948,7 @@ function App() {
         return
       }
       if (state.sessionForActions) {
-        setSessionForActions(null)
+        dismissSessionActions()
         return
       }
       if (state.renamingSessionID) {
@@ -3365,6 +3373,7 @@ function App() {
             className="session-more-button"
             onClick={(event) => {
               event.stopPropagation()
+              sessionActionsTriggerRef.current = event.currentTarget
               setSessionForActions(session)
             }}
             onKeyDown={(event) => event.stopPropagation()}
@@ -3935,7 +3944,7 @@ function App() {
         <main className="panel detail fade-in">
           <div className="detail-topbar">
             {!isDesktop && (
-              <button className="detail-back-button" onClick={() => {
+              <button className={isNativeIOS ? "detail-back-button" : "btn-secondary"} onClick={() => {
                 setView("sessions")
                 requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }))
               }}>
@@ -4295,7 +4304,7 @@ function App() {
       )}
 
       {isNativeIOS && sessionForActions && (
-        <div className="sheet-backdrop" role="presentation" onClick={() => setSessionForActions(null)}>
+        <div className="sheet-backdrop" role="presentation" onClick={() => dismissSessionActions()}>
           <section
             className="bottom-sheet session-actions-sheet fade-in"
             role="dialog"
@@ -4314,7 +4323,7 @@ function App() {
                   onClick={() => {
                     if (!sessionForActions) return
                     const id = sessionForActions.id
-                    setSessionForActions(null)
+                    dismissSessionActions(false)
                     detachCollab(id).catch(() => undefined)
                   }}
                 >
@@ -4327,7 +4336,7 @@ function App() {
                     <button type="button" onClick={() => {
                       if (!sessionForActions) return
                       const session = sessionForActions
-                      setSessionForActions(null)
+                      dismissSessionActions(false)
                       startRename(session)
                     }}>
                       <PencilIcon size={18} />
@@ -4338,7 +4347,7 @@ function App() {
                     <button type="button" className="btn-danger" onClick={() => {
                       if (!sessionForActions) return
                       const session = sessionForActions
-                      setSessionForActions(null)
+                      dismissSessionActions(false)
                       setSessionToDelete(session)
                     }}>
                       <TrashIcon size={18} />
@@ -4347,7 +4356,7 @@ function App() {
                   )}
                 </>
               )}
-              <button type="button" autoFocus onClick={() => setSessionForActions(null)}>{t('session.cancel')}</button>
+              <button type="button" autoFocus onClick={() => dismissSessionActions()}>{t('session.cancel')}</button>
             </div>
           </section>
         </div>
@@ -4368,7 +4377,7 @@ function App() {
             </p>
             <p className="subtle">{sessionToDelete.directory}</p>
             <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setSessionToDelete(null)}>
+              <button className="btn-secondary" autoFocus onClick={() => setSessionToDelete(null)}>
                 {t('session.cancel')}
               </button>
               <button className="btn-danger" onClick={() => deleteSession(sessionToDelete.id)}>
