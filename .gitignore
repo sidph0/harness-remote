@@ -2,6 +2,6 @@
 build/
 web/node_modules/
 web/dist/
-web/android/
+web/ios/
 web/*.tsbuildinfo
 *.tgz

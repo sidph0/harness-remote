@@ -9,8 +9,8 @@
     "test:i18n": "node --experimental-strip-types src/i18n.test.mjs",
     "preview": "vite preview --host",
     "cap:sync": "npx cap sync",
-    "cap:sync:android": "npx cap sync android && node scripts/sync-native-live-events.mjs",
-    "cap:add:android": "npx cap add android",
+    "cap:sync:ios": "npx cap sync ios && node scripts/sync-ios-native.mjs",
+    "cap:add:ios": "npx cap add ios",
     "test:ui": "node src/ui-regression.test.mjs",
     "test:settings": "node src/settings-regression.test.mjs",
     "test:model": "node src/model-regression.test.mjs",
@@ -18,10 +18,10 @@
     "test:config": "node --experimental-strip-types src/server-config.test.mjs"
   },
   "dependencies": {
-    "@capacitor/android": "^8.3.4",
     "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
+    "@capacitor/ios": "^8.3.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "^10.1.0",
