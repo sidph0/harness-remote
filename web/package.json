@@ -15,13 +15,15 @@
     "test:settings": "node src/settings-regression.test.mjs",
     "test:model": "node src/model-regression.test.mjs",
     "test:events": "node --experimental-strip-types src/opencode-events.test.mjs",
-    "test:config": "node --experimental-strip-types src/server-config.test.mjs"
+    "test:config": "node --experimental-strip-types src/server-config.test.mjs",
+    "test:collab": "bun src/collab/link.test.mjs && bun src/collab/client.test.mjs && bun src/collab/adapter.test.mjs && bun src/collab/attachments.test.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/ios": "^8.3.4",
+    "@oh-my-pi/pi-wire": "17.1.8",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "^10.1.0",

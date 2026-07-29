@@ -1,3 +1,14 @@
+import type {
+  AgentSnapshot,
+  AssistantMessage,
+  CollabUiRequest,
+  SessionEntry,
+  SessionHeader,
+  SessionState,
+  SubagentLifecyclePayload,
+  SubagentProgressPayload,
+} from "@oh-my-pi/pi-wire"
+
 export type BackendKind = "opencode" | "omp" | "pi" | "claude"
 
 export type HostPlatform = "windows" | "macos" | "linux"
@@ -233,4 +244,47 @@ export type CommandInfo = {
   name: string
   description?: string
   source?: "command" | "mcp" | "skill"
+}
+
+export type CollabAttachment = {
+  readonly id: string
+  readonly name: string
+  readonly link: string
+  readonly readOnly: boolean
+}
+
+export type CollabConnectionPhase = "connecting" | "waiting" | "live" | "reconnecting" | "ended"
+
+export type ActiveCollabTool = {
+  readonly toolCallId: string
+  readonly toolName: string
+  readonly args: unknown
+  readonly intent?: string
+  readonly partialResult?: unknown
+  readonly startedAt: number
+}
+
+export type CollabNotice = {
+  readonly id: number
+  readonly level: "info" | "warning" | "error"
+  readonly message: string
+  readonly at: number
+}
+
+export type CollabSnapshot = {
+  readonly phase: CollabConnectionPhase
+  readonly header: SessionHeader | null
+  readonly entries: readonly SessionEntry[]
+  readonly state: SessionState | null
+  readonly agents: readonly AgentSnapshot[]
+  readonly stream: AssistantMessage | null
+  readonly streamDone: boolean
+  readonly working: boolean
+  readonly readOnly: boolean
+  readonly notices: readonly CollabNotice[]
+  readonly endedReason: string | null
+  readonly activeTools: ReadonlyMap<string, ActiveCollabTool>
+  readonly progress: ReadonlyMap<string, SubagentProgressPayload>
+  readonly lifecycle: ReadonlyMap<string, SubagentLifecyclePayload>
+  readonly uiRequest: CollabUiRequest | null
 }

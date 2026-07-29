@@ -16,8 +16,11 @@ import {
 import { createTranslator, languageOptions, normalizeLanguage, type LanguageCode } from "./i18n"
 import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
 import { BACKEND_CLIENTS } from "./backendClient"
-import type { AgentOption, CommandInfo, DiffFile, FileEntry, FileStatusEntry, HarnessCapabilities, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
+import type { AgentOption, CollabAttachment, CommandInfo, DiffFile, FileEntry, FileStatusEntry, HarnessCapabilities, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
 import { activeSessionDirectory, loadVerifiedCapabilities, resolveInitialBackend, resumeDirectSession } from "./directSession"
+import { attachmentFromLink, loadCollabAttachments, saveCollabAttachments } from "./collab/attachments"
+import { CollabClient } from "./collab/client"
+import { adaptCollabSnapshot } from "./collab/adapter"
 import {
   SettingsIcon,
   FolderIcon,
@@ -1012,6 +1015,9 @@ function MessagePartView({
     )
   }
 
+  if (part.type === "collab-prompt") {
+    return <p className="collab-prompt-source">{t('collab.promptSource')}: {part.text}</p>
+  }
   if (part.type === "reasoning") {
     return <ReasoningPartView part={part} timestamp={timestamp} t={t} />
   }
@@ -1797,6 +1803,11 @@ function App() {
   const [todos, setTodos] = useState<TodoItem[]>([])
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([])
   const [pendingQuestions, setPendingQuestions] = useState<QuestionRequest[]>([])
+  const [showCollabAttach, setShowCollabAttach] = useState(false)
+  const [collabName, setCollabName] = useState("")
+  const [collabLink, setCollabLink] = useState("")
+  const [collabUiValue, setCollabUiValue] = useState("")
+  const [collabMutationPending, setCollabMutationPending] = useState(false)
 
   const [projectDashboard, setProjectDashboard] = useState<ProjectDashboard | null>(null)
 
@@ -1864,6 +1875,12 @@ function App() {
   const eventSubscriptionRef = useRef<{ close(): void } | null>(null)
   /** Last time an SSE event arrived for a given session, used to spot sessions the stream isn't covering. */
   const lastEventBySessionRef = useRef(new Map<string, number>())
+  const collabAttachmentsRef = useRef<CollabAttachment[]>([])
+  const collabMutationRef = useRef<Promise<void>>(Promise.resolve())
+  const collabMutationCountRef = useRef(0)
+  const collabClientsRef = useRef(new Map<string, { attachment: CollabAttachment; client: CollabClient; unsubscribe: () => void }>())
+  const suspendedCollabClientsRef = useRef(new Set<CollabClient>())
+  const collabViewsRef = useRef(new Map<string, SessionView>())
 
   const loadedMessagesRef = useRef<MessageEnvelope[]>([])
   const shouldAutoScrollRef = useRef(false)
@@ -1871,6 +1888,20 @@ function App() {
     () => sessions.find((session) => session.id === selectedID) ?? null,
     [sessions, selectedID]
   )
+  const selectedCollabEntry = selectedID ? collabClientsRef.current.get(selectedID) ?? null : null
+  const selectedCollabSnapshot = selectedCollabEntry?.client.getSnapshot() ?? null
+  const selectedCollabData = selectedCollabEntry
+    ? adaptCollabSnapshot(selectedCollabEntry.client.getSnapshot(), { sendUiResponse: (requestID, value) => selectedCollabEntry.client.sendUiResponse(requestID, value) })
+    : null
+  const selectedCollabRequest = selectedCollabData?.uiRequest ?? null
+  const selectedCollabNotice = selectedCollabSnapshot?.notices[selectedCollabSnapshot.notices.length - 1] ?? null
+  const selectedCollabPhaseText = selectedCollabSnapshot?.phase === "waiting" ? t('collab.phase.waiting')
+    : selectedCollabSnapshot?.phase === "live" ? t('collab.phase.live')
+      : selectedCollabSnapshot?.phase === "reconnecting" ? t('collab.phase.reconnecting')
+        : selectedCollabSnapshot?.phase === "ended" ? t('collab.phase.ended')
+          : t('collab.phase.connecting')
+  const selectedCollabReadOnly = selectedCollabSnapshot?.readOnly ?? false
+  const selectedCollabWritable = Boolean(selectedCollabSnapshot?.phase === "live" && !selectedCollabReadOnly)
   const projectPath = projectDashboard?.project
     ? pickString(projectDashboard.project.path) || pickString(projectDashboard.project.directory) || pickString(projectDashboard.project.root)
     : null
@@ -2008,6 +2039,123 @@ function App() {
       ? t('detail.modelNotSupported')
       : modelLoadError ? t('detail.modelUnavailable') : t('detail.modelLoading'))
 
+  function mergeCollabSessions(direct: SessionView[]): SessionView[] {
+    const collabIDs = collabClientsRef.current
+    return [...direct.filter((session) => !collabIDs.has(session.id)), ...collabViewsRef.current.values()]
+      .sort((a, b) => b.updated - a.updated)
+  }
+
+  function applyCollabDetail(id: string) {
+    const entry = collabClientsRef.current.get(id)
+    if (!entry) return
+    const data = adaptCollabSnapshot(entry.client.getSnapshot(), { sendUiResponse: (requestID, value) => entry.client.sendUiResponse(requestID, value) })
+    loadSelectedRequestRef.current += 1
+    setMessages(data.messages)
+    loadedMessagesRef.current = data.messages
+    setLoadedSessionID(id)
+    setOptimisticUserMessages([])
+    setTodos([])
+    setDiffFiles([])
+    setPendingQuestions([])
+    setProjectDashboard(null)
+    setDashboardError(null)
+    setAgentOptions([])
+    setModelOptions([])
+    setAwaitingAssistantReply(false)
+  }
+
+  function connectCollabAttachment(attachment: CollabAttachment) {
+    const id = `collab:${attachment.id}`
+    if (collabClientsRef.current.has(id)) return
+    const client = new CollabClient(attachment.link, attachment.name)
+    const update = () => {
+      const snapshot = client.getSnapshot()
+      const data = adaptCollabSnapshot(snapshot, { sendUiResponse: (requestID, value) => client.sendUiResponse(requestID, value) })
+      const adapted = data.session ? toSessionView(data.session, data.status) : null
+      collabViewsRef.current.set(id, {
+        ...(adapted ?? { title: attachment.name, directory: "OMP Collab", updated: Date.now(), files: 0, additions: 0, deletions: 0 }),
+        id,
+        title: adapted?.title || attachment.name,
+        status: snapshot.phase === "live" ? (adapted?.status ?? "idle") : snapshot.phase,
+        external: true
+      })
+      setSessions((current) => mergeCollabSessions(current))
+      if (selectedSessionRef.current?.id === id) applyCollabDetail(id)
+    }
+    const unsubscribe = client.subscribe(update)
+    collabClientsRef.current.set(id, { attachment, client, unsubscribe })
+    update()
+    client.connect()
+  }
+
+  function closeCollabAttach() {
+    setShowCollabAttach(false)
+    setCollabName("")
+    setCollabLink("")
+  }
+
+  async function attachCollab() {
+    collabMutationCountRef.current += 1
+    setCollabMutationPending(true)
+    const operation = collabMutationRef.current = collabMutationRef.current.then(async () => {
+      const attachment = attachmentFromLink(collabName, collabLink)
+      const attachments = await loadCollabAttachments()
+      const next = [...attachments, attachment]
+      await saveCollabAttachments(next)
+      collabAttachmentsRef.current = next
+      connectCollabAttachment(attachment)
+      setCollabName("")
+      setCollabLink("")
+      setShowCollabAttach(false)
+    })
+    collabMutationRef.current = operation.catch(() => undefined)
+    try {
+      await operation
+    } catch {
+      setRuntimeError(t('collab.attachFailed'))
+    } finally {
+      collabMutationCountRef.current -= 1
+      if (collabMutationCountRef.current === 0) setCollabMutationPending(false)
+    }
+  }
+
+  async function detachCollab(id: string) {
+    if (!collabClientsRef.current.has(id)) return
+    collabMutationCountRef.current += 1
+    setCollabMutationPending(true)
+    const operation = collabMutationRef.current = collabMutationRef.current.then(async () => {
+      const entry = collabClientsRef.current.get(id)
+      if (!entry) return
+      const attachments = await loadCollabAttachments()
+      const next = attachments.filter((attachment) => attachment.id !== entry.attachment.id)
+      await saveCollabAttachments(next)
+      collabAttachmentsRef.current = next
+      entry.unsubscribe()
+      entry.client.close()
+      collabClientsRef.current.delete(id)
+      collabViewsRef.current.delete(id)
+      setSessions((current) => current.filter((session) => session.id !== id))
+      if (selectedSessionRef.current?.id === id) {
+        setSelectedID(null)
+        selectedSessionRef.current = null
+        setMessages([])
+        loadedMessagesRef.current = []
+        setLoadedSessionID(null)
+        setOptimisticUserMessages([])
+        setView("sessions")
+      }
+    })
+    collabMutationRef.current = operation.catch(() => undefined)
+    try {
+      await operation
+    } catch {
+      setRuntimeError(t('collab.detachFailed'))
+    } finally {
+      collabMutationCountRef.current -= 1
+      if (collabMutationCountRef.current === 0) setCollabMutationPending(false)
+    }
+  }
+
   async function openSession(sessionID: string, directory: string) {
     setSelectedID(sessionID)
     setSelectedModelKey(readStoredModel(config.backend, sessionID))
@@ -2019,12 +2167,17 @@ function App() {
     setOptimisticUserMessages([])
     setTodos([])
     setDiffFiles([])
+    setActiveDetailSheet(null)
     setPendingQuestions([])
     setProjectDashboard(null)
     setDashboardError(null)
     setAwaitingAssistantReply(false)
     setRuntimeError(null)
     setView("detail")
+    if (collabClientsRef.current.has(sessionID)) {
+      applyCollabDetail(sessionID)
+      return
+    }
     setLoadingSessionID(sessionID)
     try {
       await loadSelected(sessionID, directory, true)
@@ -2041,7 +2194,7 @@ function App() {
       loadSelectedRequestRef.current += 1
       loadModelsRequestRef.current += 1
       autoSelectAttemptedRef.current = false
-      setSessions([])
+      setSessions(() => mergeCollabSessions([]))
       setSelectedID(null)
       setMessages([])
       setLoadedSessionID(null)
@@ -2120,8 +2273,10 @@ function App() {
       setSessions((current) => {
         const selected = selectedID ? current.find((session) => session.id === selectedID) : null
         const toPreserve = preserveSession ?? selected
-        if (!toPreserve || mapped.some((session) => session.id === toPreserve.id)) return mapped
-        return [toPreserve, ...mapped].sort((a, b) => b.updated - a.updated)
+        const direct = !toPreserve || mapped.some((session) => session.id === toPreserve.id)
+          ? mapped
+          : [toPreserve, ...mapped].sort((a, b) => b.updated - a.updated)
+        return mergeCollabSessions(direct)
       })
       backgroundFailureCountRef.current = 0
       initialSessionLoadRef.current = false
@@ -2257,6 +2412,10 @@ function App() {
   }
 
   async function loadSelected(sessionID: string, directory: string, refreshHistory = false) {
+    if (collabClientsRef.current.has(sessionID)) {
+      applyCollabDetail(sessionID)
+      return
+    }
     const requestID = ++loadSelectedRequestRef.current
     const [msg, todo, diff, questions] = await Promise.all([
       api.loadMessages(config, sessionID, directory, backendClient.messageRefreshSupported && refreshHistory),
@@ -2501,6 +2660,18 @@ function App() {
     if (!selectedSession) return
     const text = composer.trim()
     if (!text) return
+    const collab = collabClientsRef.current.get(selectedSession.id)
+    if (collab) {
+      if (!selectedCollabWritable) return
+      setRuntimeError(null)
+      try {
+        await collab.client.sendPrompt(text)
+        setComposer("")
+      } catch {
+        setRuntimeError(t('collab.writeFailed'))
+      }
+      return
+    }
 
     if (text.startsWith("/")) {
       const normalized = text.slice(1)
@@ -2665,6 +2836,16 @@ function App() {
 
   async function abortSession() {
     if (!selectedSession) return
+    const collab = collabClientsRef.current.get(selectedSession.id)
+    if (collab) {
+      if (!selectedCollabWritable) return
+      try {
+        await collab.client.sendAbort()
+      } catch {
+        setRuntimeError(t('collab.writeFailed'))
+      }
+      return
+    }
     try {
       await api.abort(config, selectedSession.id, selectedSession.directory)
       completionShouldPlayRef.current = false
@@ -2673,6 +2854,14 @@ function App() {
       await loadSelected(selectedSession.id, selectedSession.directory)
     } catch (err) {
       setRuntimeError((err as Error).message)
+    }
+  }
+
+  async function deliverCollabResponse(action: () => Promise<void>) {
+    try {
+      await action()
+    } catch {
+      setRuntimeError(t('collab.writeFailed'))
     }
   }
 
@@ -2688,6 +2877,41 @@ function App() {
   })
   resumeActionsRef.current.refreshSessions = refreshSessions
   resumeActionsRef.current.loadSelected = loadSelected
+
+  useEffect(() => {
+    if (!isNativeIOS) return
+    let disposed = false
+    collabMutationCountRef.current += 1
+    setCollabMutationPending(true)
+    const operation = collabMutationRef.current = collabMutationRef.current.then(async () => {
+      const attachments = await loadCollabAttachments()
+      if (disposed) return
+      collabAttachmentsRef.current = attachments
+      for (const attachment of attachments) {
+        try { connectCollabAttachment(attachment) } catch { /* Corrupt entries stay hidden without exposing bearer data. */ }
+      }
+    })
+    collabMutationRef.current = operation.catch(() => undefined)
+    void (async () => {
+      try {
+        await operation
+      } catch {
+        if (!disposed) setRuntimeError(t('collab.loadFailed'))
+      } finally {
+        collabMutationCountRef.current -= 1
+        if (collabMutationCountRef.current === 0) setCollabMutationPending(false)
+      }
+    })()
+    return () => {
+      disposed = true
+      for (const { unsubscribe, client } of collabClientsRef.current.values()) {
+        unsubscribe()
+        client.close()
+      }
+      collabClientsRef.current.clear()
+      collabViewsRef.current.clear()
+    }
+  }, [isNativeIOS])
 
   useEffect(() => {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language)
@@ -2738,7 +2962,17 @@ function App() {
     let handle: PluginListenerHandle | undefined
     let removed = false
     void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
-      if (!isActive) return
+      if (!isActive) {
+        for (const { client } of collabClientsRef.current.values()) {
+          if (client.getSnapshot().phase !== "ended") suspendedCollabClientsRef.current.add(client)
+          client.close()
+        }
+        return
+      }
+      for (const { client } of collabClientsRef.current.values()) {
+        if (suspendedCollabClientsRef.current.has(client)) client.connect()
+      }
+      suspendedCollabClientsRef.current.clear()
       resumeDirectSession(resumeActionsRef.current).catch(() => undefined)
     }).then((registered) => {
       if (removed) void registered.remove()
@@ -2771,6 +3005,13 @@ function App() {
   useEffect(() => {
     selectedSessionRef.current = selectedSession
   }, [selectedSession])
+  useEffect(() => {
+    setCollabUiValue(selectedCollabData?.uiRequest?.supported && selectedCollabData.uiRequest.kind === "select"
+      ? selectedCollabData.uiRequest.initialValue ?? ""
+      : selectedCollabData?.uiRequest?.supported && selectedCollabData.uiRequest.kind === "editor"
+        ? selectedCollabData.uiRequest.prefill ?? ""
+        : "")
+  }, [selectedID, selectedCollabData?.uiRequest?.id])
 
   useEffect(() => {
     eventStreamStateRef.current = eventStreamState
@@ -2786,7 +3027,7 @@ function App() {
   }, [draftConfig, config])
 
   useEffect(() => {
-    if (!selectedSession) {
+    if (!selectedSession || collabClientsRef.current.has(selectedSession.id)) {
       setModelOptions([])
       setModelLoadError(null)
       return
@@ -2944,10 +3185,10 @@ function App() {
   }, [config.backend, config.host, config.port, config.username, config.password, reconnectGeneration])
 
   useEffect(() => {
-    if (!hasConfiguredServer) {
+    if (!hasConfiguredServer && collabClientsRef.current.size === 0) {
       setView("settings")
     }
-  }, [hasConfiguredServer])
+  }, [hasConfiguredServer, sessions.length])
 
   // useJumpAffordances watches window scroll for the jump buttons already; this listener is here for
   // the auto-scroll pin, which must also break when the user scrolls the page rather than the list.
@@ -3050,133 +3291,102 @@ function App() {
 
   // Shared between the mobile sessions panel and the desktop sidebar so both list sessions
   // identically instead of maintaining two copies of this markup.
-  const renderSessionCard = (session: SessionView) => (
-    <article
-      key={session.id}
-      className={`session-card ${session.status} ${selectedID === session.id ? "active" : ""} ${renamingSessionID === session.id && renameSource === "list" ? "renaming" : ""} fade-in`}
-      onClick={() => openSession(session.id, session.directory).catch(() => undefined)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault()
-          openSession(session.id, session.directory).catch(() => undefined)
-        }
-      }}
-    >
-      <div className="session-card-main">
-        <div>
-          {renamingSessionID === session.id && renameSource === "list" ? (
-            <div
-              className="rename-inline"
-              onClick={(event) => event.stopPropagation()}
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <input
-                ref={renameInputRef}
-                value={renameValue}
-                onChange={(event) => setRenameValue(event.target.value)}
-                onKeyDown={(event) => {
-                  event.stopPropagation()
-                  if (event.key === "Enter") {
-                    event.preventDefault()
-                    renameSession(session.id, renameValue, session.directory).catch(() => undefined)
-                  } else if (event.key === "Escape") {
-                    cancelRename()
-                  }
-                }}
-                onBlur={() => {
-                  // Only cancel if not clicked on save button
-                  if (renameValue === session.title || !renameValue.trim()) {
-                    cancelRename()
-                  }
-                }}
-                placeholder={t('session.renamePlaceholder')}
-                enterKeyHint="done"
-                autoCorrect="off"
-                spellCheck={false}
-                className="rename-input"
-                autoComplete="off"
-              />
-              <button
-                className="btn-primary compact"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  renameSession(session.id, renameValue, session.directory).catch(() => undefined)
-                }}
-                onMouseDown={(event) => event.preventDefault()}
-                title={t('session.renameConfirm')}
-              >
-                <SaveIcon size={16} />
-              </button>
-              <button
-                className="btn-secondary compact"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  cancelRename()
-                }}
-                title={t('session.cancel')}
-              >
-                <CloseIcon size={16} />
-              </button>
-            </div>
-          ) : (
-            <h3 title={session.title}>{session.title}</h3>
-          )}
-          <p title={session.directory}>{shortDirectory(session.directory)}</p>
+  const renderSessionCard = (session: SessionView) => {
+    const collab = collabClientsRef.current.get(session.id)
+    return (
+      <article
+        key={session.id}
+        className={`session-card ${session.status} ${selectedID === session.id ? "active" : ""} ${renamingSessionID === session.id && renameSource === "list" ? "renaming" : ""} fade-in`}
+        onClick={() => openSession(session.id, session.directory).catch(() => undefined)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            openSession(session.id, session.directory).catch(() => undefined)
+          }
+        }}
+      >
+        <div className="session-card-main">
+          <div>
+            {renamingSessionID === session.id && renameSource === "list" ? (
+              <div className="rename-inline" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+                <input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onChange={(event) => setRenameValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    event.stopPropagation()
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      renameSession(session.id, renameValue, session.directory).catch(() => undefined)
+                    } else if (event.key === "Escape") cancelRename()
+                  }}
+                  onBlur={() => {
+                    if (renameValue === session.title || !renameValue.trim()) cancelRename()
+                  }}
+                  placeholder={t('session.renamePlaceholder')}
+                  enterKeyHint="done"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="rename-input"
+                  autoComplete="off"
+                />
+                <button className="btn-primary compact" onClick={(event) => { event.stopPropagation(); renameSession(session.id, renameValue, session.directory).catch(() => undefined) }} onMouseDown={(event) => event.preventDefault()} title={t('session.renameConfirm')}>
+                  <SaveIcon size={16} />
+                </button>
+                <button className="btn-secondary compact" onClick={(event) => { event.stopPropagation(); cancelRename() }} title={t('session.cancel')}>
+                  <CloseIcon size={16} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <h3 title={session.title}>{session.title}</h3>
+                {collab && <span className="collab-label">{collab.client.getSnapshot().readOnly ? t('collab.readOnly') : t('collab.attached')}</span>}
+              </>
+            )}
+            <p title={session.directory}>{shortDirectory(session.directory)}</p>
+          </div>
         </div>
-      </div>
-      <div className="session-stats">
-        {/* "No file changes" is said by its absence: one line fewer on a phone. */}
-        {(session.files > 0 || session.additions > 0 || session.deletions > 0) && (
-          <span className="change-summary">
-            <strong>{session.files}</strong> files
-            <strong className="positive">+{session.additions}</strong>
-            <strong className="negative">-{session.deletions}</strong>
+        <div className="session-stats">
+          {(session.files > 0 || session.additions > 0 || session.deletions > 0) && (
+            <span className="change-summary">
+              <strong>{session.files}</strong> files
+              <strong className="positive">+{session.additions}</strong>
+              <strong className="negative">-{session.deletions}</strong>
+            </span>
+          )}
+          <span className="subtle session-meta-line">
+            <span className="session-directory-compact" title={session.directory}>{shortDirectory(session.directory)}</span>
+            <span title={formatTime(session.updated)}>{t('sessions.updated', { time: formatRelativeTime(session.updated, language) })}</span>
           </span>
-        )}
-        <span className="subtle session-meta-line">
-          <span className="session-directory-compact" title={session.directory}>{shortDirectory(session.directory)}</span>
-          <span title={formatTime(session.updated)}>
-            {t('sessions.updated', { time: formatRelativeTime(session.updated, language) })}
-          </span>
-        </span>
-        <span className={`pill ${session.status}`}>{session.status}</span>
-      </div>
-      <div className="inline-actions">
-        {capabilities.sessionRename && capabilities.sessionDelete && (
-          <>
-            <button
-              className="btn-secondary"
-              onClick={(event) => {
-                event.stopPropagation()
-                startRename(session)
-              }}
-              title={t('session.renameTitle')}
-              aria-label={t('session.renameTitle')}
-            >
-              <PencilIcon size={16} />
-              {t('session.renameConfirm')}
-            </button>
-            <button
-              className="btn-danger"
-              onClick={(event) => {
-                event.stopPropagation()
-                setSessionToDelete(session)
-              }}
-              title={t('sessions.delete')}
-            >
+          <span className={`pill ${session.status}`}>{session.status}</span>
+        </div>
+        <div className="inline-actions">
+          {collab ? (
+            <button className="btn-danger" onClick={(event) => { event.stopPropagation(); detachCollab(session.id).catch(() => undefined) }} disabled={collabMutationPending} title={t('collab.detach')}>
               <TrashIcon size={16} />
-              {t('sessions.delete')}
+              {t('collab.detach')}
             </button>
-          </>
-        )}
-      </div>
-    </article>
-  )
+          ) : capabilities.sessionRename && capabilities.sessionDelete && (
+            <>
+              <button className="btn-secondary" onClick={(event) => { event.stopPropagation(); startRename(session) }} title={t('session.renameTitle')} aria-label={t('session.renameTitle')}>
+                <PencilIcon size={16} />
+                {t('session.renameConfirm')}
+              </button>
+              <button className="btn-danger" onClick={(event) => { event.stopPropagation(); setSessionToDelete(session) }} title={t('sessions.delete')}>
+                <TrashIcon size={16} />
+                {t('sessions.delete')}
+              </button>
+            </>
+          )}
+        </div>
+      </article>
+    )
+  }
 
   const navItems = [
-    { view: "sessions" as const, label: t('nav.sessions'), icon: <FolderIcon size={19} />, disabled: !hasConfiguredServer },
+    { view: "sessions" as const, label: t('nav.sessions'), icon: <FolderIcon size={19} />, disabled: !hasConfiguredServer && collabClientsRef.current.size === 0 },
     { view: "detail" as const, label: t('nav.detail'), icon: <ChatIcon size={19} />, disabled: !selectedSession },
     { view: "settings" as const, label: t('nav.settings'), icon: <SettingsIcon size={19} />, disabled: false },
     { view: "help" as const, label: t('nav.help'), icon: <HelpIcon size={19} />, disabled: false }
@@ -3251,6 +3461,11 @@ function App() {
             >
               {creatingSession ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
             </button>
+            {isNativeIOS && (
+              <button type="button" className="btn-secondary" onClick={() => setShowCollabAttach(true)} aria-label={t('collab.attach')} title={t('collab.attach')}>
+                <PlusIcon size={16} />
+              </button>
+            )}
           </div>
 
           <div className="sidebar-sessions" ref={sidebarSessionsRef} onScroll={refreshSidebarJumps}>
@@ -3432,6 +3647,12 @@ function App() {
                 </>
               )}
             </button>
+            {isNativeIOS && (
+              <button type="button" className="btn-secondary" onClick={() => setShowCollabAttach(true)}>
+                <PlusIcon size={18} />
+                {t('collab.attach')}
+              </button>
+            )}
           </div>
           
           {settingsNotice && (
@@ -3496,6 +3717,12 @@ function App() {
                 {creatingSession ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}
                 {creatingSession ? t('sessions.creating') : t('sessions.new')}
               </button>
+              {isNativeIOS && (
+                <button type="button" className="btn-secondary" onClick={() => setShowCollabAttach(true)}>
+                  <PlusIcon size={18} />
+                  {t('collab.attach')}
+                </button>
+              )}
             </div>
           </div>
           
@@ -3520,6 +3747,7 @@ function App() {
                     type="button"
                     className="btn-primary"
                     onClick={() => refreshSessionsWithIndicator().catch(() => undefined)}
+
                     disabled={refreshingSessions}
                   >
                     {refreshingSessions ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}
@@ -3652,22 +3880,43 @@ function App() {
         </div>
       )}
 
+      {isNativeIOS && showCollabAttach && (
+        <div className="modal-backdrop" role="presentation" onClick={closeCollabAttach}>
+          <section className="modal-card collab-attach-modal fade-in" role="dialog" aria-modal="true" aria-labelledby="collab-attach-title" onClick={(event) => event.stopPropagation()}>
+            <h2 id="collab-attach-title">{t('collab.attach')}</h2>
+            <p className="subtle">{t('collab.attachHint')}</p>
+            <label htmlFor="collab-name">
+              {t('collab.name')}
+              <input id="collab-name" value={collabName} onChange={(event) => setCollabName(event.target.value)} autoComplete="off" />
+            </label>
+            <label htmlFor="collab-link">
+              {t('collab.link')}
+              <input id="collab-link" type="password" value={collabLink} onChange={(event) => setCollabLink(event.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off" />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="btn-secondary" onClick={closeCollabAttach}>{t('session.cancel')}</button>
+              <button type="button" className="btn-primary" onClick={() => attachCollab().catch(() => undefined)} disabled={collabMutationPending || !collabName.trim() || !collabLink.trim()}>{t('collab.attachConfirm')}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {mainView === "detail" && (
         <main className="panel detail fade-in">
           <div className="detail-topbar">
             {!isDesktop && (
               <button className="btn-secondary" onClick={() => {
-                setView("sessions");
-                requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
+                setView("sessions")
+                requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }))
               }}>{t('detail.backToSessions')}</button>
             )}
           </div>
           <div className="header-row detail-header">
-              <div>
+            <div>
               <h2>
                 {selectedSession ? (
                   <div className="detail-title-row">
-                    {renamingSessionID === selectedSession.id && renameSource === "header" ? (
+                    {renamingSessionID === selectedSession.id && renameSource === "header" && !selectedCollabEntry ? (
                       <div className="rename-inline">
                         <input
                           ref={renameInputRef}
@@ -3677,93 +3926,55 @@ function App() {
                             if (event.key === "Enter") {
                               event.preventDefault()
                               renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)
-                            } else if (event.key === "Escape") {
-                              cancelRename()
-                            }
+                            } else if (event.key === "Escape") cancelRename()
                           }}
-                          onBlur={() => {
-                            if (renameValue === selectedSession.title || !renameValue.trim()) {
-                              cancelRename()
-                            }
-                          }}
+                          onBlur={() => { if (renameValue === selectedSession.title || !renameValue.trim()) cancelRename() }}
                           placeholder={t('session.renamePlaceholder')}
                           className="rename-input"
                           autoComplete="off"
                         />
-                        {/* Two unlabelled 14px glyphs asked the user to guess which one commits.
-                            One labelled primary action, and cancel as the quieter icon. */}
-                        <button
-                          className="btn-icon btn-primary compact rename-save"
-                          onClick={() => renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)}
-                          onMouseDown={(event) => event.preventDefault()}
-                          disabled={!renameValue.trim() || renameValue === selectedSession.title}
-                          title={t('session.renameConfirm')}
-                          aria-label={t('session.renameConfirm')}
-                        >
+                        <button className="btn-icon btn-primary compact rename-save" onClick={() => renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)} onMouseDown={(event) => event.preventDefault()} disabled={!renameValue.trim() || renameValue === selectedSession.title} title={t('session.renameConfirm')} aria-label={t('session.renameConfirm')}>
                           <SaveIcon size={16} />
                         </button>
-                        <button
-                          className="btn-icon btn-secondary compact"
-                          onClick={() => cancelRename()}
-                          onMouseDown={(event) => event.preventDefault()}
-                          title={t('session.cancel')}
-                          aria-label={t('session.cancel')}
-                        >
+                        <button className="btn-icon btn-secondary compact" onClick={cancelRename} onMouseDown={(event) => event.preventDefault()} title={t('session.cancel')} aria-label={t('session.cancel')}>
                           <CloseIcon size={18} />
                         </button>
                       </div>
+                    ) : capabilities.sessionRename && !selectedCollabEntry ? (
+                      <button type="button" className="session-title-button" onClick={() => startRename(selectedSession, "header")} title={t('session.renameTitle')} aria-label={t('session.renameTitle')}>
+                        <span className="session-title-text">{selectedSession.title}</span>
+                        <PencilIcon size={18} className="session-title-pencil" />
+                      </button>
                     ) : (
-                      <>
-                        {/* A 14px glyph is a poor target and a poor hint. The title itself is the
-                            button; the pencil only says that it can be edited. */}
-                        {capabilities.sessionRename ? (
-                          <button
-                            type="button"
-                            className="session-title-button"
-                            onClick={() => startRename(selectedSession, "header")}
-                            title={t('session.renameTitle')}
-                            aria-label={t('session.renameTitle')}
-                          >
-                            <span className="session-title-text">{selectedSession.title}</span>
-                            <PencilIcon size={18} className="session-title-pencil" />
-                          </button>
-                        ) : (
-                          <span className="session-title-text">{selectedSession.title}</span>
-                        )}
-                      </>
+                      <span className="session-title-text">{selectedSession.title}</span>
                     )}
                   </div>
-                ) : (
-                  t('detail.selectSession')
-                )}
+                ) : t('detail.selectSession')}
               </h2>
               {selectedSession && (
                 <p className="subtle detail-subline" title={selectedSession.directory}>
                   <span className="detail-subline-path">{shortDirectory(selectedSession.directory)}</span>
-                  {/* Moved up from between the messages and the composer, where the sticky
-                      composer covered half of it. Written out rather than tagged: a one-word
-                      label needed a tooltip to be understood, and touch has no tooltip. */}
-                  {selectedSession.external && (
+                  {selectedCollabEntry ? (
+                    <>
+                      <span className="detail-subline-note">{selectedCollabReadOnly ? t('collab.readOnly') : t('collab.attached')} · {selectedCollabPhaseText}</span>
+                      {selectedCollabSnapshot?.phase === "ended" && selectedCollabSnapshot.endedReason && <span className="detail-subline-note">{selectedCollabSnapshot.endedReason}</span>}
+                    </>
+                  ) : (selectedSession.external && (
                     <span className="detail-subline-note">{t('detail.externalSession')}</span>
-                  )}
+                  ))}
                 </p>
-                )}
-              </div>
+              )}
             </div>
+          </div>
 
-          {selectedSession && (
+          {selectedSession && !selectedCollabEntry && (
             <section className="session-context-strip" aria-label={t('detail.contextStripLabel')}>
               {showModelChip && (
-                <button
-                  type="button"
-                  className={`context-chip${modelLoadError && !activeModelOption ? " chip-warning" : ""}`}
-                  onClick={() => setActiveDetailSheet("ai")}
-                >
+                <button type="button" className={`context-chip${modelLoadError && !activeModelOption ? " chip-warning" : ""}`} onClick={() => setActiveDetailSheet("ai")}>
                   <span>{t('detail.aiChip')}</span>
                   <strong>{capabilities.agents ? `${agentLabel(activeAgent ?? { id: activeAgentID, name: activeAgentID, mode: "primary" })} · ${modelStatusLabel}` : modelStatusLabel}</strong>
                 </button>
               )}
-
               <button type="button" className="context-chip ghost" onClick={() => setActiveDetailSheet("details")}>
                 <span>{t('detail.detailsChip')}</span>
                 <strong>{projectName || t('detail.projectLabel')}</strong>
@@ -3774,34 +3985,37 @@ function App() {
           {todos.length > 0 && (
             <div className="todo-box">
               <div className="todo-header-row">
-                <h3>
-                  <span style={{ marginRight: 'var(--space-2)' }}>📋</span>
-                  {t('todo.title')}
-                </h3>
-                <button
-                  type="button"
-                  className="todo-toggle-btn"
-                  onClick={() => setTodosExpanded((value) => !value)}
-                  aria-expanded={todosExpanded}
-                  aria-controls="todo-items-content"
-                >
+                <h3><span style={{ marginRight: 'var(--space-2)' }}>📋</span>{t('todo.title')}</h3>
+                <button type="button" className="todo-toggle-btn" onClick={() => setTodosExpanded((value) => !value)} aria-expanded={todosExpanded} aria-controls="todo-items-content">
                   {todosExpanded ? t('todo.hide') : t('todo.show')}
                 </button>
               </div>
               {todosExpanded && (
                 <div id="todo-items-content">
                   {todos.slice(0, 6).map((item) => (
-                    <div key={item.id} className="todo-item">
-                      <span className={`todo-status ${item.status}`}>
-                        {item.status === 'completed' ? '✓' : '○'}
-                      </span>
-                      <span>{item.content}</span>
-                    </div>
+                    <div key={item.id} className="todo-item"><span className={`todo-status ${item.status}`}>{item.status === 'completed' ? '✓' : '○'}</span><span>{item.content}</span></div>
                   ))}
                 </div>
               )}
             </div>
           )}
+
+          {selectedCollabNotice && (
+            <div className={`notice ${selectedCollabNotice.level}`} role={selectedCollabNotice.level === "error" ? "alert" : "status"}>
+              {selectedCollabNotice.message}
+            </div>
+          )}
+
+          {selectedCollabData?.agents.map((agent) => (
+            <section className="collab-agent" key={agent.id} aria-label={t('collab.agent')}>
+              <div className="collab-agent-heading">
+                <strong>{agent.name}</strong>
+                <span>{agent.status}</span>
+              </div>
+              {agent.progress && <p><strong>{t('collab.progress')}:</strong> {summarizeJson(agent.progress)}</p>}
+              {agent.lifecycle && <p><strong>{t('collab.lifecycle')}:</strong> {summarizeJson(agent.lifecycle)}</p>}
+            </section>
+          ))}
 
           <MessagesPane
             loadingSessionID={loadingSessionID}
@@ -3823,7 +4037,36 @@ function App() {
             onQuestionResolved={handleQuestionResolved}
           />
 
-
+          {selectedCollabRequest && (
+            <section className="collab-request" aria-live="polite">
+              <h3>{selectedCollabRequest.title}</h3>
+              {!selectedCollabRequest.supported ? (
+                <p className="subtle">{selectedCollabRequest.reason === "checkbox selection is not supported" ? t('collab.checkboxUnsupported') : t('collab.requestUnsupported')}</p>
+              ) : selectedCollabRequest.kind === "select" ? (
+                <>
+                  {selectedCollabRequest.helpText && <p className="subtle">{selectedCollabRequest.helpText}</p>}
+                  <label htmlFor={`collab-request-${selectedCollabRequest.id}`}>{t('collab.selectResponse')}</label>
+                  <select id={`collab-request-${selectedCollabRequest.id}`} value={collabUiValue} onChange={(event) => setCollabUiValue(event.target.value)}>
+                    <option value="" disabled>{t('collab.selectResponse')}</option>
+                    {selectedCollabRequest.options.map((option) => <option key={option.label} value={option.label}>{option.label}</option>)}
+                  </select>
+                  <div className="inline-actions">
+                    <button type="button" className="btn-secondary" disabled={!selectedCollabWritable} onClick={() => { void deliverCollabResponse(() => selectedCollabRequest.cancel()) }}>{t('session.cancel')}</button>
+                    <button type="button" className="btn-primary" disabled={!selectedCollabWritable || !collabUiValue} onClick={() => { void deliverCollabResponse(() => selectedCollabRequest.submit(collabUiValue)) }}>{t('question.sendAnswer')}</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label htmlFor={`collab-request-${selectedCollabRequest.id}`}>{t('collab.editorResponse')}</label>
+                  <textarea id={`collab-request-${selectedCollabRequest.id}`} value={collabUiValue} onChange={(event) => setCollabUiValue(event.target.value)} />
+                  <div className="inline-actions">
+                    <button type="button" className="btn-secondary" disabled={!selectedCollabWritable} onClick={() => { void deliverCollabResponse(() => selectedCollabRequest.cancel()) }}>{t('session.cancel')}</button>
+                    <button type="button" className="btn-primary" disabled={!selectedCollabWritable} onClick={() => { void deliverCollabResponse(() => selectedCollabRequest.submit(collabUiValue)) }}>{t('question.sendAnswer')}</button>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
 
           <div className="composer" ref={composerRef}>
             <textarea
@@ -3836,10 +4079,7 @@ function App() {
               onFocus={() => {
                 syncChatBottomClearance()
                 setTimeout(() => scrollMessagesToBottom("smooth"), 400)
-                const onResize = () => {
-                  scrollMessagesToBottom("smooth")
-                  window.removeEventListener("resize", onResize)
-                }
+                const onResize = () => { scrollMessagesToBottom("smooth"); window.removeEventListener("resize", onResize) }
                 window.addEventListener("resize", onResize, { once: true })
               }}
               onKeyDown={(event) => {
@@ -3848,20 +4088,10 @@ function App() {
                   send().catch(() => undefined)
                 }
               }}
-              disabled={!selectedSession}
+              disabled={!selectedSession || (Boolean(selectedCollabEntry) && !selectedCollabWritable)}
             />
-            {/* While the agent works the same button stops it, but starts sending again as
-                soon as there is something to send, so a follow-up can be queued. */}
-            <button
-              onClick={showStopAction ? abortSession : send}
-              disabled={!selectedSession}
-              className={showStopAction ? "btn-danger" : "btn-primary"}
-            >
-              {showStopAction ? (
-                <StopCircleIcon size={18} />
-              ) : (
-                <SendIcon size={18} />
-              )}
+            <button onClick={showStopAction ? abortSession : send} disabled={!selectedSession || (Boolean(selectedCollabEntry) && !selectedCollabWritable)} className={showStopAction ? "btn-danger" : "btn-primary"}>
+              {showStopAction ? <StopCircleIcon size={18} /> : <SendIcon size={18} />}
             </button>
           </div>
 
@@ -3869,7 +4099,7 @@ function App() {
         </main>
       )}
 
-      {activeDetailSheet && selectedSession && (
+      {activeDetailSheet && selectedSession && !selectedCollabEntry && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setActiveDetailSheet(null)}>
           <section
             className="bottom-sheet fade-in"

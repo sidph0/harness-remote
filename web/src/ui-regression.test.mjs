@@ -5,6 +5,9 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 const icons = readFileSync(new URL('./Icons.tsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+const appCode = app
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/[^\r\n]*/g, '')
 
 const refreshButton = app.match(/<button onClick=\{refreshSessionsWithIndicator\}[\s\S]*?\{t\('sessions\.refresh'\)\}[\s\S]*?<\/button>/)
 assert.ok(refreshButton, 'sessions refresh button should call refreshSessionsWithIndicator')
@@ -329,5 +332,126 @@ assert.match(
   /\[option\.description \?\? option\.providerName, option\.variant\]/,
   "the model picker's secondary line must prefer the harness description, falling back to the provider"
 )
+
+// Collaboration clients are transports, so suspension closes every socket but remembers only
+// nonterminal clients for foreground reconnection. An ended client must remain terminal.
+const suspendedClientsRefMatch = /const (suspended\w*ClientsRef) = useRef\(new Set<CollabClient>\(\)\)/.exec(appCode)
+assert.ok(suspendedClientsRefMatch, 'native lifecycle should track the Collab clients suspended while nonterminal')
+const suspendedClientsRef = suspendedClientsRefMatch[1]
+const appStateStart = appCode.indexOf('CapacitorApp.addListener("appStateChange"')
+assert.notEqual(appStateStart, -1, 'the native app lifecycle should be handled')
+const appStateHandler = appCode.slice(appStateStart, appCode.indexOf('}).then((registered)', appStateStart))
+assert.match(
+  appStateHandler,
+  new RegExp(`if \\(!isActive\\)\\s*\\{[\\s\\S]*?for \\(const [^)]+ of collabClientsRef\\.current\\.values\\(\\)\\)[\\s\\S]*?if \\(client\\.getSnapshot\\(\\)\\.phase !== ["']ended["']\\) ${suspendedClientsRef}\\.current\\.add\\(client\\)[\\s\\S]*?client\\.close\\(\\)[\\s\\S]*?return`),
+  'inactive must remember only nonterminal Collab clients while still closing every attached transport'
+)
+assert.match(
+  appStateHandler,
+  new RegExp(`for \\(const [^)]+ of collabClientsRef\\.current\\.values\\(\\)\\)[\\s\\S]*?if \\(${suspendedClientsRef}\\.current\\.has\\(client\\)\\)\\s*\\{?\\s*client\\.connect\\(\\)[\\s\\S]*?${suspendedClientsRef}\\.current\\.clear\\(\\)[\\s\\S]*?resumeDirectSession\\(resumeActionsRef\\.current\\)`),
+  'active must reconnect only clients that were nonterminal at suspension, then clear the resume set'
+)
+assert.doesNotMatch(
+  appStateHandler,
+  /for \(const [^)]+ of collabClientsRef\.current\.values\(\)\) client\.connect\(\)/,
+  'foreground must not unconditionally revive an ended Collab client'
+)
+
+// Adapted Collab agents are status, not controls: show their identity and live progress/lifecycle
+// without inventing actions the collaboration protocol does not expose.
+const collabAgentsView = /selectedCollabData\??\.agents\.map\(\(agent\) =>\s*\([\s\S]*?\)\s*\)\}/.exec(appCode)?.[0] ?? ''
+assert.ok(collabAgentsView, 'the selected adapted Collab agents should be rendered')
+for (const field of ['name', 'status', 'progress', 'lifecycle']) {
+  assert.ok(collabAgentsView.includes(`agent.${field}`), `the read-only Collab agent list should expose ${field}`)
+}
+assert.equal(
+  /<(?:button|input|select|textarea)\b/.test(collabAgentsView),
+  false,
+  'adapted Collab agents are read-only and must not gain agent controls'
+)
+
+// The bounded notice list is already sanitized by CollabClient. The detail surface should show its
+// latest item, rather than copying it into runtime state where an older notice can remain visible.
+assert.match(
+  appCode,
+  /selectedCollabSnapshot\?\.notices(?:\.at\(-1\)|\[selectedCollabSnapshot\.notices\.length\s*-\s*1\])/,
+  'the selected Collab detail should derive the latest sanitized snapshot notice'
+)
+assert.match(
+  appCode,
+  /selectedCollabNotice\s*&&[\s\S]*?className=[^\r\n]*\b(?:notice|error)\b[\s\S]*?selectedCollabNotice\.message/,
+  'the latest selected Collab notice should render in the detail notice/error surface'
+)
+
+// Collab prompts are normal dispatched message parts plus a visible source attribution. Keeping the
+// branch in MessagePartView ensures every message renderer gets the attribution consistently.
+const messagePartView = appCode.slice(appCode.indexOf('function MessagePartView'), appCode.indexOf('const ACTION_GROUP_TYPES'))
+const collabPromptStart = messagePartView.indexOf('if (part.type === "collab-prompt")')
+assert.notEqual(collabPromptStart, -1, 'MessagePartView should explicitly dispatch collab-prompt parts')
+const collabPromptNextBranch = messagePartView.indexOf('\n  if (', collabPromptStart + 1)
+const collabPromptBranch = messagePartView.slice(collabPromptStart, collabPromptNextBranch === -1 ? undefined : collabPromptNextBranch)
+assert.ok(
+  collabPromptBranch.includes('return') && collabPromptBranch.includes('part.text') && /<[a-z][^>]*>/i.test(collabPromptBranch),
+  'the collab-prompt dispatcher branch should visibly attribute the prompt source'
+)
+
+const unsupportedCollabRequestStart = appCode.indexOf('!selectedCollabRequest.supported ? (')
+const unsupportedCollabRequestEnd = appCode.indexOf(') : selectedCollabRequest.kind === "select"', unsupportedCollabRequestStart)
+assert.ok(
+  unsupportedCollabRequestStart !== -1 && unsupportedCollabRequestEnd > unsupportedCollabRequestStart,
+  'unsupported Collab requests should have their own informational render branch'
+)
+const unsupportedCollabRequest = appCode.slice(unsupportedCollabRequestStart, unsupportedCollabRequestEnd)
+assert.equal(
+  /selectedCollabRequest\.submit|<(?:button|input|select|textarea)\b/.test(unsupportedCollabRequest),
+  false,
+  'an unsupported checkbox request must stay informational and must not gain a send fallback'
+)
+
+const collabMutationRefMatch = /const\s+(\w+Ref)\s*=\s*useRef(?:<Promise<[^>]+>>)?\(Promise\.resolve\(\)\)/.exec(appCode)
+assert.ok(collabMutationRefMatch, 'Collab Keychain operations should share one Promise mutation-chain ref')
+const collabMutationRef = collabMutationRefMatch[1]
+const attachCollabBlock = appCode.slice(appCode.indexOf('async function attachCollab()'), appCode.indexOf('async function detachCollab('))
+const detachCollabBlock = appCode.slice(appCode.indexOf('async function detachCollab('), appCode.indexOf('async function openSession('))
+const collabLoadStart = appCode.lastIndexOf('useEffect(() => {', appCode.indexOf('loadCollabAttachments()'))
+const collabLoadBlock = appCode.slice(collabLoadStart, appCode.indexOf('useEffect(() => {', collabLoadStart + 1))
+for (const [operation, block] of [['initial load', collabLoadBlock], ['attach', attachCollabBlock], ['detach', detachCollabBlock]]) {
+  assert.match(
+    block,
+    new RegExp(`${collabMutationRef}\\.current\\s*=\\s*${collabMutationRef}\\.current\\.then\\(`),
+    `Collab ${operation} should append its Keychain read-modify-write operation to the shared Promise chain`
+  )
+}
+
+const collabMutationPendingMatch = /const\s+\[(\w*[Cc]ollab\w*[Pp]ending\w*),\s*(\w+)\]\s*=\s*useState\(false\)/.exec(appCode)
+assert.ok(collabMutationPendingMatch, 'Collab Keychain mutations should expose one pending state for their controls')
+const [, collabMutationPending, setCollabMutationPending] = collabMutationPendingMatch
+assert.ok(appCode.includes(`${setCollabMutationPending}(true)`) && appCode.includes(`${setCollabMutationPending}(false)`), 'Collab Keychain mutation pending state should cover the queued operation lifetime')
+const collabDetachButton = /<button\b[^>]*onClick=\{[^}]*detachCollab\([\s\S]*?<\/button>/.exec(appCode)?.[0] ?? ''
+const collabAttachConfirmButton = /<button\b[^>]*onClick=\{\(\) => attachCollab\(\)[\s\S]*?<\/button>/.exec(appCode)?.[0] ?? ''
+for (const [control, button] of [['detach', collabDetachButton], ['attach', collabAttachConfirmButton]]) {
+  assert.ok(button && new RegExp(`disabled=\\{[^}]*${collabMutationPending}`).test(button), `Collab ${control} should be disabled while a Keychain mutation is pending`)
+}
+
+const collabSendStart = appCode.indexOf('if (collab) {', appCode.indexOf('async function send()'))
+const collabSendBranch = appCode.slice(collabSendStart, appCode.indexOf('if (text.startsWith("/"))', collabSendStart))
+assert.match(
+  collabSendBranch,
+  /await\s+collab\.client\.sendPrompt\(text\)[\s\S]*?setComposer\(""\)/,
+  'Collab prompt submission should clear the composer only after sendPrompt fulfills'
+)
+
+const collabResponseHandlerMatch = /async function\s+(\w+)\((\w+):\s*\(\)\s*=>\s*(?:void\s*\|\s*)?Promise<void>\)\s*\{([\s\S]{0,500}?)\n  \}/.exec(appCode)
+assert.ok(collabResponseHandlerMatch, 'Collab UI responses should use an async delivery handler')
+const [, collabResponseHandler, collabResponseAction, collabResponseHandlerBody] = collabResponseHandlerMatch
+assert.match(collabResponseHandlerBody, new RegExp(`try\\s*\\{\\s*await\\s+${collabResponseAction}\\(\\)\\s*\\}\\s*catch(?:\\s*\\([^)]*\\))?\\s*\\{[\\s\\S]*?setRuntimeError\\(t\\(['"]collab\\.writeFailed['"]\\)\\)`), 'Collab UI response delivery should catch both synchronous action throws and asynchronous rejection')
+assert.doesNotMatch(collabResponseHandlerBody, new RegExp(`await\\s+${collabResponseAction}\\(\\)\\.catch\\s*\\(`), 'await action().catch(...) cannot catch synchronous Collab action precondition throws')
+assert.doesNotMatch(collabResponseHandlerBody, /applyCollabDetail|setCollabUiValue|setMessages|setSessions/, 'sending a Collab UI response must not optimistically dismiss its local request')
+assert.match(appCode, new RegExp(`${collabResponseHandler}\\(\\(\\) => selectedCollabRequest\\.cancel\\(\\)\\)`), 'Collab request cancellation should use the rejection-aware delivery handler')
+assert.match(appCode, new RegExp(`${collabResponseHandler}\\(\\(\\) => selectedCollabRequest\\.submit\\(collabUiValue\\)\\)`), 'Collab request submission should use the rejection-aware delivery handler')
+
+const detachAfterSave = detachCollabBlock.slice(detachCollabBlock.indexOf('await saveCollabAttachments('))
+assert.match(detachAfterSave, /if\s*\(selectedSessionRef\.current\?\.id\s*===\s*id\)/, 'detach should check the current selected session after the Keychain save fulfills')
+assert.doesNotMatch(detachAfterSave, /if\s*\(selectedID\s*===\s*id\)/, 'detach must not use the render-captured selectedID after awaiting the Keychain save')
 
 console.log('ui regression tests passed')

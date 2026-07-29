@@ -218,6 +218,31 @@ type TranslationKey =
   | 'question.otherPlaceholder'
   | 'question.skip'
   | 'question.sendAnswer'
+  | 'collab.attach'
+  | 'collab.attachHint'
+  | 'collab.name'
+  | 'collab.link'
+  | 'collab.attachConfirm'
+  | 'collab.attached'
+  | 'collab.readOnly'
+  | 'collab.detach'
+  | 'collab.attachFailed'
+  | 'collab.detachFailed'
+  | 'collab.loadFailed'
+  | 'collab.writeFailed'
+  | 'collab.phase.connecting'
+  | 'collab.phase.waiting'
+  | 'collab.phase.live'
+  | 'collab.phase.reconnecting'
+  | 'collab.phase.ended'
+  | 'collab.checkboxUnsupported'
+  | 'collab.requestUnsupported'
+  | 'collab.selectResponse'
+  | 'collab.editorResponse'
+  | 'collab.promptSource'
+  | 'collab.agent'
+  | 'collab.progress'
+  | 'collab.lifecycle'
 
 const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
   en: {
@@ -436,7 +461,32 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'question.ariaLabel': 'Question from OpenCode',
     'question.otherPlaceholder': 'Other…',
     'question.skip': 'Skip',
-    'question.sendAnswer': 'Send answer'
+    'question.sendAnswer': 'Send answer',
+    'collab.attach': 'Attach OMP Collab',
+    'collab.attachHint': 'The bearer link is stored only in iOS Keychain and is never displayed after attachment.',
+    'collab.name': 'Display name',
+    'collab.link': 'Bearer link',
+    'collab.attachConfirm': 'Attach',
+    'collab.attached': 'OMP Collab',
+    'collab.readOnly': 'Read-only',
+    'collab.detach': 'Detach',
+    'collab.attachFailed': 'Could not attach this collaboration link.',
+    'collab.detachFailed': 'Could not remove this collaboration credential.',
+    'collab.loadFailed': 'Could not load collaboration credentials from Keychain.',
+    'collab.writeFailed': 'The collaboration request could not be sent.',
+    'collab.phase.connecting': 'Connecting',
+    'collab.phase.waiting': 'Waiting for host',
+    'collab.phase.live': 'Live',
+    'collab.phase.reconnecting': 'Reconnecting',
+    'collab.phase.ended': 'Ended',
+    'collab.checkboxUnsupported': 'Checkbox replies are not supported in Harness Remote. Reply from the host session.',
+    'collab.requestUnsupported': 'This reply request is not supported in Harness Remote.',
+    'collab.selectResponse': 'Choose a response',
+    'collab.editorResponse': 'Response',
+    'collab.promptSource': 'Prompt from',
+    'collab.agent': 'Collaboration agent',
+    'collab.progress': 'Progress',
+    'collab.lifecycle': 'Lifecycle'
   },
   it: {
     'app.title': 'Harness Remote',
@@ -654,7 +704,32 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'question.ariaLabel': 'Domanda da OpenCode',
     'question.otherPlaceholder': 'Altro…',
     'question.skip': 'Salta',
-    'question.sendAnswer': 'Invia risposta'
+    'question.sendAnswer': 'Invia risposta',
+    'collab.attach': 'Collega OMP Collab',
+    'collab.attachHint': 'Il link bearer viene salvato solo nel Portachiavi iOS e non viene più mostrato dopo il collegamento.',
+    'collab.name': 'Nome visualizzato',
+    'collab.link': 'Link bearer',
+    'collab.attachConfirm': 'Collega',
+    'collab.attached': 'OMP Collab',
+    'collab.readOnly': 'Sola lettura',
+    'collab.detach': 'Scollega',
+    'collab.attachFailed': 'Impossibile collegare questo link di collaborazione.',
+    'collab.detachFailed': 'Impossibile rimuovere questa credenziale di collaborazione.',
+    'collab.loadFailed': 'Impossibile caricare le credenziali di collaborazione dal Portachiavi.',
+    'collab.writeFailed': 'Impossibile inviare la richiesta di collaborazione.',
+    'collab.phase.connecting': 'Connessione',
+    'collab.phase.waiting': 'In attesa dell’host',
+    'collab.phase.live': 'Attiva',
+    'collab.phase.reconnecting': 'Riconnessione',
+    'collab.phase.ended': 'Terminata',
+    'collab.checkboxUnsupported': 'Le risposte con caselle di controllo non sono supportate in Harness Remote. Rispondi dalla sessione host.',
+    'collab.requestUnsupported': 'Questa richiesta di risposta non è supportata in Harness Remote.',
+    'collab.selectResponse': 'Scegli una risposta',
+    'collab.editorResponse': 'Risposta',
+    'collab.promptSource': 'Prompt da',
+    'collab.agent': 'Agente di collaborazione',
+    'collab.progress': 'Avanzamento',
+    'collab.lifecycle': 'Ciclo di vita'
   },
   'zh-TW': {
     'app.title': 'Harness Remote',
@@ -872,7 +947,32 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'question.ariaLabel': '來自 OpenCode 的問題',
     'question.otherPlaceholder': '其他…',
     'question.skip': '略過',
-    'question.sendAnswer': '傳送回答'
+    'question.sendAnswer': '傳送回答',
+    'collab.attach': '連結 OMP Collab',
+    'collab.attachHint': 'Bearer 連結只會儲存在 iOS 鑰匙圈，連結後不會再次顯示。',
+    'collab.name': '顯示名稱',
+    'collab.link': 'Bearer 連結',
+    'collab.attachConfirm': '連結',
+    'collab.attached': 'OMP Collab',
+    'collab.readOnly': '唯讀',
+    'collab.detach': '中斷連結',
+    'collab.attachFailed': '無法連結此協作連結。',
+    'collab.detachFailed': '無法移除此協作憑證。',
+    'collab.loadFailed': '無法從鑰匙圈載入協作憑證。',
+    'collab.writeFailed': '無法傳送協作要求。',
+    'collab.phase.connecting': '連線中',
+    'collab.phase.waiting': '等待主機',
+    'collab.phase.live': '即時',
+    'collab.phase.reconnecting': '重新連線中',
+    'collab.phase.ended': '已結束',
+    'collab.checkboxUnsupported': 'Harness Remote 不支援核取方塊回覆。請從主機工作階段回覆。',
+    'collab.requestUnsupported': 'Harness Remote 不支援此回覆要求。',
+    'collab.selectResponse': '選擇回覆',
+    'collab.editorResponse': '回覆',
+    'collab.promptSource': '提示來源',
+    'collab.agent': '協作代理',
+    'collab.progress': '進度',
+    'collab.lifecycle': '生命週期'
   }
 }
 

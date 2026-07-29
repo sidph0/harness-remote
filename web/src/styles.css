@@ -619,6 +619,18 @@ p {
   background: var(--warning-soft);
 }
 
+.pill.connecting,
+.pill.waiting,
+.pill.reconnecting {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.pill.ended {
+  color: var(--muted-strong);
+  background: var(--surface-strong);
+}
+
 .detail {
   min-height: calc(100dvh - 132px);
   display: flex;
@@ -1476,6 +1488,11 @@ p {
   background: var(--danger-soft);
 }
 
+.notice.warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
 .empty-state {
   text-align: center;
   padding: var(--space-8) var(--space-4);
@@ -1527,6 +1544,73 @@ p {
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
   margin-top: var(--space-5);
+}
+
+.collab-attach-modal label,
+.collab-request label {
+  display: block;
+  margin-top: var(--space-3);
+  color: var(--muted-strong);
+  font-weight: 700;
+}
+
+.collab-attach-modal input,
+.collab-request select,
+.collab-request textarea {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.collab-label {
+  display: inline-block;
+  margin-top: var(--space-1);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.collab-prompt-source {
+  margin-top: var(--space-2);
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.collab-agent {
+  margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  padding: var(--space-2) var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.collab-agent-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.collab-agent-heading span,
+.collab-agent p {
+  color: var(--muted-strong);
+  font-size: 0.8rem;
+}
+
+.collab-agent p {
+  margin-top: var(--space-1);
+}
+.collab-request {
+  margin-top: var(--space-3);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-lg);
+  background: var(--primary-soft);
+  padding: var(--space-3);
+}
+
+.collab-request .inline-actions {
+  margin-top: var(--space-3);
+  justify-content: flex-end;
 }
 
 .sheet-backdrop {
@@ -2281,6 +2365,12 @@ button.compact {
 
   .message {
     padding: var(--space-3);
+  }
+
+  .collab-agent-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-1);
   }
 
   .composer {
