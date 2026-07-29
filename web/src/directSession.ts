@@ -26,8 +26,11 @@ export async function loadVerifiedCapabilities<T>(
   },
 ): Promise<T> {
   const health = await client.health(config)
-  if (health.backend && health.backend !== config.backend) {
-    throw new Error(`Expected backend ${config.backend}, reached ${health.backend}`)
+  if (health.healthy !== true) {
+    throw new Error("Backend health check reported unhealthy")
+  }
+  if (health.backend !== config.backend) {
+    throw new Error(`Expected backend ${config.backend}, reached ${health.backend ?? "unknown"}`)
   }
 
   try {

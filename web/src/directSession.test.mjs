@@ -81,6 +81,38 @@ const fallbackResult = await loadVerifiedCapabilities(config, fallbackCapabiliti
 assert.equal(fallbackResult, fallbackCapabilities, 'a verified backend should use fallback capabilities when its capabilities request fails')
 assert.deepEqual(fallbackCalls, ['health', 'capabilities'], 'fallback handling should still verify health first')
 
+const unhealthyCalls = []
+await assert.rejects(
+  loadVerifiedCapabilities(config, fallbackCapabilities, {
+    async health() {
+      unhealthyCalls.push('health')
+      return { healthy: false, version: '1.0.0', backend: 'omp' }
+    },
+    async capabilities() {
+      unhealthyCalls.push('capabilities')
+      return remoteCapabilities
+    }
+  }),
+  'an unhealthy response should be rejected even when its backend matches'
+)
+assert.deepEqual(unhealthyCalls, ['health'], 'capabilities must not be requested from an unhealthy backend')
+
+const missingBackendCalls = []
+await assert.rejects(
+  loadVerifiedCapabilities(config, fallbackCapabilities, {
+    async health() {
+      missingBackendCalls.push('health')
+      return { healthy: true, version: '1.0.0' }
+    },
+    async capabilities() {
+      missingBackendCalls.push('capabilities')
+      return remoteCapabilities
+    }
+  }),
+  'a healthy response without a backend identity should be rejected'
+)
+assert.deepEqual(missingBackendCalls, ['health'], 'capabilities must not be requested until the response identifies the expected backend')
+
 const mismatchCalls = []
 await assert.rejects(
   loadVerifiedCapabilities({ ...config, backend: 'pi' }, fallbackCapabilities, {
