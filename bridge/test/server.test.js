@@ -598,6 +598,31 @@ test("reports host platform and root-approved directory presets with harness cap
   }
 })
 
+test("keeps approved home presets when another configured root is stale", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "harness-remote-stale-root-home-"))
+  const downloads = path.join(home, "Downloads")
+  const staleRoot = path.join(home, "stale-root")
+  await mkdir(downloads)
+
+  try {
+    await withHomeDirectory(home, async () => {
+      const bridge = await startServer({ backend: "omp", roots: [downloads, staleRoot] })
+      try {
+        const capabilities = await readJSON(bridge.baseURL, "/v1/capabilities")
+        assert.deepEqual(capabilities.directoryPresets, [{
+          id: "downloads",
+          label: "Downloads",
+          path: await realpath(downloads)
+        }])
+      } finally {
+        await bridge.close()
+      }
+    })
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test("filters missing and outside-root directory presets while file browsing stays root-safe", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "harness-remote-filtered-home-"))
   const downloads = path.join(home, "Downloads")

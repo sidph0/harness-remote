@@ -6,9 +6,10 @@ const PRESETS = ["Downloads", "Documents", "Desktop"]
 
 export async function allowedDirectory(candidate, { roots = [] }) {
   const resolved = await realpath(candidate)
-  const allowedRoots = await Promise.all((roots.length ? roots : [process.cwd()]).map((root) => realpath(root)))
-  const withinRoot = allowedRoots.some((root) => {
-    const relative = path.relative(root, resolved)
+  const rootResults = await Promise.allSettled((roots.length ? roots : [process.cwd()]).map((root) => realpath(root)))
+  const withinRoot = rootResults.some((result) => {
+    if (result.status !== "fulfilled") return false
+    const relative = path.relative(result.value, resolved)
     return relative === "" || !path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`)
   })
   if (!withinRoot) throw new Error("Directory is outside the configured --root boundary")
