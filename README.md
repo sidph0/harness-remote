@@ -52,12 +52,12 @@ The bridge does not read or modify OMP databases. It starts an ACP process for t
 
 - OMP installed and available as `omp` on the host computer.
 - Node.js 22.12 or newer for the full repository workflow. The bridge itself requires Node.js 20 or newer.
-- A checkout of this repository on the host computer.
-- An explicit `--root` directory containing the worktrees the phone may browse and use for new sessions.
+- A checkout of this repository on the host computer. The Mac must clone or copy the repository to build the IPA; the Windows host must also clone or copy it to run the bridge.
+- An explicit `--root` directory containing the worktrees the phone may browse and use for new sessions. Windows examples use `--root "C:\"` so every directory accessible to the Windows account is available.
 - Basic Auth credentials for every non-loopback bridge listener.
 - A trusted LAN or a Tailscale network. Never expose the bridge directly to the public Internet.
 
-The bridge uses the current working directory when `--root` is omitted. Always pass an explicit root for phone access. The root limits the bridge's directory browser and new-session selection. It is not a sandbox for OMP, which still runs with the host account's normal privileges.
+The root limits bridge browsing and new-session selection. It is not a sandbox for OMP, which still runs with the host account's normal privileges. On Windows, `--root "C:\"` allows any accessible directory on the C drive; repeat `--root` for other drives. The first root is used by **Use server default**.
 
 ### Start the bridge on macOS or Linux
 
@@ -84,43 +84,46 @@ Run from the repository root. Replace the password placeholder or load it from y
 Set-Location C:\path\to\harness-remote
 $env:HARNESS_REMOTE_USERNAME = "omp"
 $env:HARNESS_REMOTE_PASSWORD = "<bridge-password>"
-npx --yes .\bridge `
+node .\bridge\src\cli.js `
   --host 0.0.0.0 `
   --port 4097 `
-  --root "$HOME\Software" `
+  --root "C:\" `
   --cors capacitor://localhost
-Remove-Item Env:HARNESS_REMOTE_PASSWORD
 ```
 
-For Windows Command Prompt, the equivalent is:
+For Windows Command Prompt:
 
 ```cmd
 cd C:\path\to\harness-remote
 set HARNESS_REMOTE_USERNAME=omp
 set HARNESS_REMOTE_PASSWORD=<bridge-password>
-npx --yes .\bridge --host 0.0.0.0 --port 4097 --root "%USERPROFILE%\Software" --cors capacitor://localhost
-set HARNESS_REMOTE_PASSWORD=
+node .\bridge\src\cli.js --host 0.0.0.0 --port 4097 --root "C:\" --cors capacitor://localhost
 ```
+
+Replace the repository path and password. Keep the bridge terminal open. Restart the bridge after changing environment variables or `--root` values.
 
 ### Check bridge health
 
-From any host shell, let `curl` prompt for the password:
-
-```bash
-curl --user omp http://127.0.0.1:4097/v1/health
-```
-
-PowerShell:
+PowerShell and Command Prompt must use `curl.exe`, not the PowerShell `curl` alias:
 
 ```powershell
-curl.exe --user omp http://127.0.0.1:4097/v1/health
+curl.exe -v --user omp http://127.0.0.1:4097/v1/health
 ```
 
-A healthy response includes the OMP backend and ACP version:
+For a Tailscale test, use the Windows Tailscale address:
+
+```powershell
+$ts = (tailscale ip -4).Trim()
+curl.exe -v --user omp "http://${ts}:4097/v1/health"
+```
+
+Enter the bridge password when prompted. A healthy response includes:
 
 ```json
 {"healthy":true,"backend":"omp","version":"17.x.x"}
 ```
+
+`401 Unauthorized` means the network connection reached the bridge and only the username or password is wrong. `Cannot reach` means the request did not reach the bridge.
 
 ### Connect the app
 
@@ -128,22 +131,30 @@ For the web or PWA build:
 
 1. Open **Settings**.
 2. Select **Oh My Pi (bridge)**.
-3. Enter the host LAN address, port `4097`, username, and password.
+3. Enter the host address, port `4097`, username, and password.
 4. Test the connection.
 
-For the native iOS build, OMP is already selected and the backend picker is hidden. Enter the same host, port, and Basic Auth credentials.
+For the native iOS build, OMP is already selected and the backend picker is hidden.
 
-The phone and host must be able to route to each other. Open TCP port `4097` in the host firewall for the trusted LAN or tailnet only.
+For a local connection, use the Windows LAN IPv4 address and port `4097`.
 
-### Tailscale
+For remote iPhone access, install Tailscale on Windows and iPhone, sign in to the same tailnet, then run:
 
-Tailscale is external routing, not app authentication:
+```powershell
+tailscale serve --bg http://127.0.0.1:4097
+tailscale serve status
+```
 
-1. Install and authenticate Tailscale separately on the host and iPhone.
-2. Confirm both devices are on the intended tailnet.
-3. Start the bridge on a non-loopback address with Basic Auth and an explicit root.
-4. Enter the host's Tailscale MagicDNS name or tailnet IP in Harness Remote.
-5. Keep bridge Basic Auth enabled. Harness Remote does not store or authenticate Tailscale credentials.
+Use the HTTPS hostname printed by `tailscale serve status` in the iPhone app with port `443`, for example:
+
+```text
+Host: https://your-pc.your-tailnet.ts.net
+Port: 443
+```
+
+This HTTPS path is recommended for native iOS. Direct `100.x.x.x` HTTP may work in Safari while native iOS networking rejects it. Tailscale traffic uses a VPN interface, so Harness Remote may not appear under iOS **Local Network** settings. That is not required for the Tailscale path.
+
+Install Tailscale from [tailscale.com/download/windows](https://tailscale.com/download/windows) and the [iPhone App Store](https://apps.apple.com/us/app/tailscale/id1470499037). Tailscale provides routing only. Keep bridge Basic Auth enabled.
 
 ## OMP Collab
 
@@ -154,6 +165,9 @@ Collab is the manual path for an arbitrary desktop OMP session.
 3. In the iOS app, choose **Attach OMP Collab**.
 4. Enter a display name. The name is required.
 5. Paste the link and attach it.
+6. Close the attachment dialog and open **Sessions**. The attached room appears as a separate card named with the display name and labeled **OMP Collab**.
+
+The terminal's join message confirms the handshake. It does not select the card in the app automatically. Direct Bridge sessions and desktop terminal sessions are separate; to share one session between the terminal and phone, use Collab.
 
 There is no automatic desktop-session discovery, account lookup, host scan, or OMP database inspection.
 
@@ -192,14 +206,14 @@ The bridge is dependency-free and runs on the Node.js standard library.
 | Option | Purpose |
 |---|---|
 | `--backend omp` | Use OMP. This is the default and the iOS backend. |
-| `--host <address>` | Bind address. Defaults to `127.0.0.1`. Use a trusted non-loopback address for phone access. |
+| `--host <address>` | Bind address. Defaults to `127.0.0.1`. Use `0.0.0.0` for phone access. |
 | `--port <number>` | HTTP port. Defaults to `4097`. |
 | `--username <name>` and `--password <value>` | Basic Auth. Environment variables are safer for real passwords. |
-| `--root <path>` | Allowed directory root. Repeat for multiple roots. Use explicitly for phone access. |
+| `--root <path>` | Allowed directory root. Repeat for multiple roots. Windows can use `C:\` to allow the whole C drive. |
 | `--cors <origin>` | Allow one exact browser or native WebView origin. Repeat as needed. |
 | `--state-dir <path>` | Store bridge-local snapshots and session metadata elsewhere. |
 | `--acp-command <path>` and `--acp-arg <value>` | Replace the default `omp acp` command when using another ACP adapter. |
-| `--log-requests` | Log request paths and queries for local debugging. Never use it to log secrets. |
+| `--log-requests` | Log limited request paths for local debugging. It does not print prompts or assistant replies. |
 
 The bridge also accepts the matching `HARNESS_REMOTE_*` environment variables. The legacy `OMP_BRIDGE_*` names are still accepted as compatibility aliases.
 
@@ -233,7 +247,7 @@ In Xcode, select the App target, choose the signing team, select an iPhone or **
 After installation, verify the native path on the actual iPhone. An Xcode archive alone does not verify networking:
 
 1. Direct LAN bridge: health, capabilities, create a session, select it, prompt, stream, abort, and reconnect.
-2. Direct Tailscale bridge: repeat the same sequence through MagicDNS or the tailnet IP.
+2. Direct Tailscale bridge: repeat the same sequence through the HTTPS Tailscale Serve hostname on port `443`.
 3. Collab writable: attach a disposable `/collab` link, receive live output, prompt, abort, and answer a request.
 4. Collab read-only: attach a room-key-only link and confirm live output with no mutation controls.
 5. Keychain: relaunch with an attachment, confirm it returns, detach it, relaunch again, and confirm it stays removed.

@@ -1,12 +1,14 @@
 # iPhone + Windows 11 Quick Start
 
-The Mac is needed only to create and sign the IPA. After the app is installed, the Windows 11 computer runs the OMP bridge and the iPhone connects directly to it.
+The Mac is needed only to build and sign the IPA. After installation, Windows 11 runs OMP and the bridge. Tailscale connects the Windows host and iPhone remotely.
 
 ## 1. Build and install the IPA on a Mac
 
+The Mac must have the repository, either by cloning it or copying the checkout.
+
 Requirements: macOS, Xcode, Node.js 22.12+, an Apple signing team, and a sideloader of your choice.
 
-From a fresh repository checkout:
+From the repository root:
 
 ```bash
 cd web
@@ -22,9 +24,9 @@ In Xcode:
 1. Select the App target and choose your Apple signing team.
 2. Connect the iPhone, or select **Any iOS Device**.
 3. Archive the app and export an IPA.
-4. Enable **Developer Mode** on the iPhone if iOS requests it.
+4. Enable **Developer Mode** on the iPhone if requested.
 5. Load the IPA with a sideloader of your choice.
-6. Trust the developer profile on the iPhone if prompted: **Settings > General > VPN & Device Management**.
+6. Trust the developer profile if prompted: **Settings > General > VPN & Device Management**.
 
 For later builds, skip `npm run cap:add:ios`:
 
@@ -35,6 +37,8 @@ npm run cap:sync:ios
 open ios/App/App.xcodeproj
 ```
 
+The Mac is not needed after the IPA is installed.
+
 ## 2. Prepare Windows 11
 
 Install or verify:
@@ -42,6 +46,7 @@ Install or verify:
 - Node.js 22.12+
 - Oh My Pi, with `omp` available in PowerShell
 - Git, if cloning the repository on Windows
+- Tailscale, for remote access
 
 Verify OMP:
 
@@ -49,139 +54,169 @@ Verify OMP:
 omp --version
 ```
 
-Clone the repository and choose a directory that the phone may use for sessions. Example: `C:\Users\YourName\Software`.
+Clone or copy the repository to Windows. The examples below use `C:\harness-remote` and allow the full C drive so any directory accessible to your Windows account can be selected.
 
-Allow the bridge through the Windows firewall. Run PowerShell as Administrator:
+## 3. Allow the bridge through Windows Firewall
+
+Run PowerShell as Administrator:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Harness Remote Bridge" -Direction Inbound -Protocol TCP -LocalPort 4097 -Action Allow -Profile Private
+New-NetFirewallRule `
+  -DisplayName "Harness Remote Bridge" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 4097 `
+  -Action Allow `
+  -Profile Any
 ```
 
-Find the Windows LAN address:
+Basic Auth still protects the bridge. Do not expose it publicly.
+
+## 4. Start the Windows bridge
+
+Keep this PowerShell window open:
+
+```powershell
+Set-Location C:\harness-remote
+$env:HARNESS_REMOTE_USERNAME = "omp"
+$env:HARNESS_REMOTE_PASSWORD = "your-password"
+node .\bridge\src\cli.js `
+  --host 0.0.0.0 `
+  --port 4097 `
+  --root "C:\" `
+  --cors capacitor://localhost
+```
+
+The bridge should print:
+
+```text
+OMP bridge listening on http://0.0.0.0:4097
+```
+
+Restart the bridge after changing the password or root. The first configured root is used by **Use server default**. Windows permissions still apply even when the root is `C:\`.
+
+## 5. Verify bridge health
+
+Use `curl.exe`, not plain `curl`:
+
+```powershell
+curl.exe -v --user omp http://127.0.0.1:4097/v1/health
+```
+
+Enter the bridge password. Expected response:
+
+```json
+{"healthy":true,"backend":"omp","version":"..."}
+```
+
+A `401 Unauthorized` response means the bridge was reached and the credentials are wrong. `Cannot reach` means the request did not reach the bridge.
+
+## 6. Test a local iPhone connection
+
+Put Windows and the iPhone on the same Wi-Fi network. Run:
 
 ```powershell
 ipconfig
 ```
 
-Use the computer's **IPv4 Address**, not `127.0.0.1`.
-
-## 3. Start the bridge on Windows 11
-
-Keep this PowerShell window open while using the app:
-
-```powershell
-Set-Location C:\path\to\harness-remote
-$env:HARNESS_REMOTE_USERNAME = "omp"
-$env:HARNESS_REMOTE_PASSWORD = "<bridge-password>"
-node .\bridge\src\cli.js `
-  --host 0.0.0.0 `
-  --port 4097 `
-  --root "$HOME\Software" `
-  --cors capacitor://localhost
-```
-
-Replace the repository path, root path, and password. Do not close this window. The bridge must be running for the iPhone to connect.
-
-Optional local health check:
-
-```powershell
-curl.exe --user omp http://127.0.0.1:4097/v1/health
-```
-
-Enter the bridge password when prompted. A healthy response contains `"backend":"omp"`.
-
-## 4. Connect the iPhone app
-
-Put the iPhone and Windows computer on the same Wi-Fi network.
-
 In Harness Remote:
 
 1. Open **Settings**.
 2. OMP is already selected in the native iOS app.
-3. Set **Host** to the Windows IPv4 address from `ipconfig`.
+3. Set **Host** to the Windows LAN IPv4 address.
 4. Set **Port** to `4097`.
 5. Enter username `omp` and the bridge password.
 6. Tap **Test Connection**.
-7. Select an allowed directory and create a session.
-8. Send a prompt, confirm streaming, and test **Abort**.
+7. Create a session under `C:\`.
 
-## 5. Set up Tailscale for remote access
+Do not enter `0.0.0.0`, `127.0.0.1`, or `localhost` in the app.
 
-Tailscale creates a private network between the Windows host and iPhone. The friend's Mac is not needed for this step.
+## 7. Install and configure Tailscale
 
-### Install Tailscale on Windows 11
+Tailscale must be installed on Windows and iPhone. The IPA-building Mac is not needed.
 
-1. Download Tailscale for Windows from [tailscale.com/download/windows](https://tailscale.com/download/windows).
+### Windows
+
+1. Download Tailscale from [tailscale.com/download/windows](https://tailscale.com/download/windows).
 2. Run the installer.
-3. Open Tailscale from the Windows system tray.
-4. Sign in with the account that will own the tailnet.
-5. Confirm that Tailscale shows **Connected**.
+3. Open Tailscale from the system tray.
+4. Sign in to the tailnet account.
+5. Confirm it shows **Connected**.
 
-In PowerShell, verify the Windows Tailscale address:
+Verify the Windows Tailscale address:
 
 ```powershell
 tailscale status
 tailscale ip -4
 ```
 
-The address normally starts with `100.`. Keep it for the iPhone app.
-
-### Install Tailscale on the iPhone
+### iPhone
 
 1. Install Tailscale from the [App Store](https://apps.apple.com/us/app/tailscale/id1470499037).
-2. Open it and sign in with the same account used on Windows.
-3. Allow the VPN configuration when iOS asks.
-4. Confirm the iPhone appears in the same tailnet as the Windows computer.
-5. Leave Tailscale connected while using Harness Remote.
+2. Sign in with the same account.
+3. Allow the VPN configuration.
+4. Confirm Windows and iPhone appear in the same tailnet.
+5. Leave Tailscale connected.
 
-### Allow the bridge through Windows Firewall
+Tailscale traffic uses a VPN interface. Harness Remote may not appear under iOS **Local Network** settings, and that is not required for Tailscale.
 
-The existing Private profile rule may not cover the Tailscale adapter. Run PowerShell as Administrator and inspect the adapter:
+## 8. Use HTTPS for the remote iPhone connection
 
-```powershell
-Get-NetAdapter | Where-Object Name -Like "*Tailscale*"
-```
+The native iOS app may reject plain HTTP to a Tailscale `100.x.x.x` address even when Safari can open it. Use Tailscale Serve to provide HTTPS inside the tailnet.
 
-If the Tailscale adapter is blocked, allow TCP `4097` for the adapter shown by that command. The simplest rule is:
+On Windows:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Harness Remote Tailscale Bridge" -Direction Inbound -Protocol TCP -LocalPort 4097 -Action Allow -Profile Any
+tailscale serve --bg http://127.0.0.1:4097
+tailscale serve status
 ```
 
-Basic Auth still protects the bridge. Do not remove the bridge username and password.
+Tailscale will print an HTTPS hostname, such as:
 
-### Connect through Tailscale
+```text
+https://your-pc.your-tailnet.ts.net
+```
 
-1. Start the bridge with `--host 0.0.0.0` as shown above.
-2. Keep the bridge PowerShell window open.
-3. Keep Tailscale connected on Windows and iPhone.
-4. Open Harness Remote on the iPhone.
-5. In **Settings**, set **Host** to the Windows Tailscale IPv4 address from `tailscale ip -4`.
-6. Set **Port** to `4097`.
-7. Enter username `omp` and the bridge password.
-8. Tap **Test Connection**.
+Test it:
 
-Do not enter `0.0.0.0` in the app. It is only the bridge's listening address. The app must use the specific Windows Tailscale address, usually a `100.x.x.x` address.
+```powershell
+curl.exe -v --user omp https://your-pc.your-tailnet.ts.net/v1/health
+```
 
-If the connection fails, first test the local bridge on Windows, then check Tailscale status on both devices, the Windows Firewall rule, and the Windows Tailscale IP.
+Do not use `tailscale funnel`. Serve is limited to your tailnet.
 
-## 6. Optional desktop Collab attachment
+In Harness Remote, use:
 
-To attach the phone to a running desktop OMP session:
+```text
+Host: https://your-pc.your-tailnet.ts.net
+Port: 443
+Username: omp
+Password: your bridge password
+```
 
-1. Run `/collab` in the desktop OMP session.
-2. Copy the generated link.
-3. In the iPhone app, choose **Attach OMP Collab**.
-4. Enter a name and paste the link.
-5. Use a writable link for prompts and aborts, or a room-key-only link for read-only viewing.
+The app supports an HTTPS hostname in the Host field. Use the exact hostname printed by `tailscale serve status`.
 
-## If the phone cannot connect
+## 9. Attach a desktop OMP session with Collab
 
-Check these in order:
+To share the same desktop OMP session with the terminal and phone:
 
-1. The bridge PowerShell window is still running.
-2. The app uses the Windows IPv4 address, not `localhost` or `127.0.0.1`.
-3. Windows and iPhone are on the same Wi-Fi, or both use the same Tailscale tailnet.
-4. TCP port `4097` is allowed through the Windows Private firewall.
-5. The username and password match the bridge environment variables.
-6. The `--root` directory exists and contains the folders you want to use.
+1. Start an interactive OMP session on Windows.
+2. Run `/collab` in that terminal.
+3. Copy the generated bearer link.
+4. In Harness Remote, choose **Attach OMP Collab**.
+5. Enter a display name and paste the link.
+6. Close the dialog and open **Sessions**.
+7. Select the card named with your display name and labeled **OMP Collab**.
+
+The terminal's join message confirms the handshake. It does not automatically select the card in the app. Direct Bridge sessions and desktop terminal sessions are separate. Collab is the shared-session path.
+
+Use a writable link for prompts and aborts. A room-key-only link is read-only.
+
+## Troubleshooting
+
+- `401 Unauthorized`: the bridge was reached, but the username or password is wrong. Restart the bridge after changing them.
+- `Cannot reach`: the request did not reach the bridge. Check Tailscale, the Windows firewall, the bridge terminal, and the Host value.
+- Safari reaches the direct `100.x.x.x` URL but the app fails: use Tailscale Serve and configure the app with the HTTPS MagicDNS hostname and port `443`.
+- The Collab card appears briefly and disappears: the attachment handshake succeeded, but the app lost its in-memory Collab view. Fully close and reopen the current IPA, return to **Sessions**, and check for the card labeled **OMP Collab**. If it repeatedly disappears, this is an app state issue rather than a Tailscale or bridge issue.
+- A selected folder is rejected: restart the bridge with `--root "C:\"` or another root that contains the folder.
+- **Use server default** fails: restart the bridge and ensure the first `--root` path exists.
