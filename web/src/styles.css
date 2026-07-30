@@ -2843,7 +2843,12 @@ button.btn-icon.compact {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
+  column-gap: 0.5rem;
   padding-top: 0.25rem;
+}
+
+.ios-native .ios-sessions-title h2 {
+  overflow-wrap: anywhere;
 }
 
 .ios-native .sessions-header-actions {
