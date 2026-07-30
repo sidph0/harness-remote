@@ -297,7 +297,7 @@ const eventOnly = adaptCollabSnapshot(snapshot({
   ],
   stream: { ...streamingMessage, timestamp: 1_785_240_030_000 },
   activeTools: new Map([['event-running', {
-    toolCallId: 'event-running', toolName: 'read', args: { path: 'running.txt' }, partialResult: 'partial', startedAt: 1_785_240_015_000,
+    toolCallId: 'event-running', toolName: 'read', args: 'running.txt', partialResult: 'partial', startedAt: 1_785_240_015_000,
     bearer: 'secret-running-bearer', transportFrame: 'secret-running-frame'
   }]]),
   completedTools: new Map([
@@ -324,7 +324,7 @@ assert.deepEqual(eventOnly.messages[1].parts[0].state, {
   time: { start: 1_785_240_012_000, end: 1_785_240_013_000 }
 })
 assert.deepEqual(eventOnly.messages[2].parts[0].state, {
-  status: 'running', input: { path: 'running.txt' }, output: 'partial', time: { start: 1_785_240_015_000 }
+  status: 'running', input: { value: 'running.txt' }, output: 'partial', time: { start: 1_785_240_015_000 }
 })
 assert.deepEqual(eventOnly.messages[4].parts[0].state, {
   status: 'completed', input: { command: 'echo done' }, output: 'done', time: { start: 1_785_240_025_000, end: 1_785_240_026_000 }

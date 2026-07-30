@@ -80,7 +80,7 @@ function messageParts(
     const isError = result ? Boolean(result.message.isError) : Boolean(completed?.isError)
     const state = {
       status: isError ? "error" : result || completed ? "completed" : "running",
-      ...(isRecord(input) ? { input } : {}),
+      ...(input === undefined ? {} : { input: isRecord(input) ? input : { value: input } }),
       ...(output === undefined ? {} : { output }),
       ...(isError ? { error: output ?? "" } : {}),
       time: {
