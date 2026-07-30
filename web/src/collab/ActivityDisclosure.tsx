@@ -6,6 +6,7 @@ export function ActivityDisclosure({
   onToggle,
   summaryClassName,
   detailsClassName,
+  ariaLabel,
   summary,
   children,
 }: {
@@ -13,6 +14,7 @@ export function ActivityDisclosure({
   open: boolean
   onToggle: () => void
   summaryClassName: string
+  ariaLabel?: string
   detailsClassName: string
   summary: ReactNode
   children: ReactNode
@@ -23,6 +25,7 @@ export function ActivityDisclosure({
         type="button"
         className={summaryClassName}
         aria-expanded={open}
+        aria-label={ariaLabel}
         aria-controls={id}
         onClick={onToggle}
       >

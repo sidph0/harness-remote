@@ -118,7 +118,7 @@ export type ToolState = {
   output?: string
   error?: string
   time?: { start: number; end?: number }
-  metadata?: { answers?: string[][] }
+  metadata?: { answers?: string[][]; intent?: string }
 }
 
 export type MessagePart = {
@@ -291,12 +291,14 @@ export type CollabSnapshot = {
   readonly agents: readonly AgentSnapshot[]
   readonly stream: AssistantMessage | null
   readonly streamDone: boolean
+  readonly streamSequence: number
   readonly working: boolean
   readonly readOnly: boolean
   readonly notices: readonly CollabNotice[]
   readonly endedReason: string | null
   readonly activeTools: ReadonlyMap<string, ActiveCollabTool>
   readonly completedTools: ReadonlyMap<string, CompletedCollabTool>
+  readonly toolSequences: ReadonlyMap<string, number>
   readonly progress: ReadonlyMap<string, SubagentProgressPayload>
   readonly lifecycle: ReadonlyMap<string, SubagentLifecyclePayload>
   readonly uiRequest: CollabUiRequest | null

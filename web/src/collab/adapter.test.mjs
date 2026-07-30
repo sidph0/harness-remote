@@ -38,8 +38,10 @@ function snapshot(overrides = {}) {
     lifecycle: new Map(),
     stream: null,
     streamDone: false,
+    streamSequence: 0,
     activeTools: new Map(),
     completedTools: new Map(),
+    toolSequences: new Map(),
     working: false,
     readOnly: false,
     uiRequest: null,
@@ -297,12 +299,12 @@ const eventOnly = adaptCollabSnapshot(snapshot({
   ],
   stream: { ...streamingMessage, timestamp: 1_785_240_030_000 },
   activeTools: new Map([['event-running', {
-    toolCallId: 'event-running', toolName: 'read', args: 'running.txt', partialResult: 'partial', startedAt: 1_785_240_015_000,
+    toolCallId: 'event-running', toolName: 'read', args: 'running.txt', intent: 'Inspect the current file', partialResult: 'partial', startedAt: 1_785_240_015_000,
     bearer: 'secret-running-bearer', transportFrame: 'secret-running-frame'
   }]]),
   completedTools: new Map([
     ['event-complete', {
-      toolCallId: 'event-complete', toolName: 'bash', args: { command: 'echo done' }, result: 'done', isError: false,
+      toolCallId: 'event-complete', toolName: 'bash', args: { command: 'echo done' }, intent: 'Confirm the result', result: 'done', isError: false,
       startedAt: 1_785_240_025_000, completedAt: 1_785_240_026_000, bearer: 'secret-complete-bearer', transportFrame: 'secret-complete-frame'
     }],
     ['event-error', {
@@ -324,16 +326,47 @@ assert.deepEqual(eventOnly.messages[1].parts[0].state, {
   time: { start: 1_785_240_012_000, end: 1_785_240_013_000 }
 })
 assert.deepEqual(eventOnly.messages[2].parts[0].state, {
-  status: 'running', input: { value: 'running.txt' }, output: 'partial', time: { start: 1_785_240_015_000 }
+  status: 'running', input: { value: 'running.txt' }, output: 'partial',
+  time: { start: 1_785_240_015_000 }, metadata: { intent: 'Inspect the current file' }
 })
 assert.deepEqual(eventOnly.messages[4].parts[0].state, {
-  status: 'completed', input: { command: 'echo done' }, output: 'done', time: { start: 1_785_240_025_000, end: 1_785_240_026_000 }
+  status: 'completed', input: { command: 'echo done' }, output: 'done',
+  time: { start: 1_785_240_025_000, end: 1_785_240_026_000 }, metadata: { intent: 'Confirm the result' }
 })
 const eventOnlyJson = JSON.stringify(eventOnly.messages)
 assert.equal(eventOnlyJson.includes('secret-running-bearer'), false)
 assert.equal(eventOnlyJson.includes('secret-running-frame'), false)
 assert.equal(eventOnlyJson.includes('secret-complete-bearer'), false)
 assert.equal(eventOnlyJson.includes('secret-complete-frame'), false)
+
+const orderingEntries = [
+  { type: 'message', id: 'ordering-before', timestamp: '2026-07-28T12:00:10.000Z', message: { role: 'user', content: 'before', timestamp: 1_785_240_010_000 } },
+  { type: 'message', id: 'ordering-after', timestamp: '2026-07-28T12:00:20.000Z', message: { role: 'user', content: 'after', timestamp: 1_785_240_020_000 } },
+]
+const orderingStream = { ...streamingMessage, content: [{ type: 'thinking', thinking: 'resumed reasoning' }], timestamp: 1_785_240_030_000 }
+const orderingTool = new Map([['ordering-tool', {
+  toolCallId: 'ordering-tool', toolName: 'read', args: {}, intent: 'Inspect ordering', partialResult: 'working', startedAt: 1_785_240_015_000,
+}]])
+const streamAfterTool = adaptCollabSnapshot(snapshot({
+  entries: orderingEntries,
+  stream: orderingStream,
+  streamSequence: 4,
+  activeTools: orderingTool,
+  toolSequences: new Map([['ordering-tool', 3]]),
+}))
+assert.deepEqual(streamAfterTool.messages.map(message => message.info.id), [
+  'ordering-before', 'collab-tool-ordering-tool', 'ordering-after', 'collab-stream-1785240030000',
+])
+const toolAfterStream = adaptCollabSnapshot(snapshot({
+  entries: orderingEntries,
+  stream: orderingStream,
+  streamSequence: 4,
+  activeTools: orderingTool,
+  toolSequences: new Map([['ordering-tool', 5]]),
+}))
+assert.deepEqual(toolAfterStream.messages.map(message => message.info.id), [
+  'ordering-before', 'collab-stream-1785240030000', 'ordering-after', 'collab-tool-ordering-tool',
+])
 
 const eventWithoutHeader = adaptCollabSnapshot(snapshot({
   header: null,

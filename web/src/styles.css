@@ -1183,6 +1183,14 @@ p {
   color: var(--danger, #d33);
 }
 
+.message-tool-intent {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .message-patch {
   margin-top: var(--space-2);
   display: flex;
@@ -1197,6 +1205,21 @@ p {
   border-radius: var(--radius-sm);
   padding: 0.2rem 0.5rem;
   background: var(--surface-strong);
+}
+
+.message-patch-details {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+}
+
+.message-patch-details[hidden] {
+  display: none;
+}
+
+.message-patch-details .message-diff-patch {
+  max-width: 100%;
 }
 
 .question-card {

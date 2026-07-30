@@ -11,6 +11,7 @@ const render = () => ActivityDisclosure({
   onToggle: toggle,
   summaryClassName: 'message-tool-summary',
   detailsClassName: 'message-tool-details',
+  ariaLabel: 'Show tool details',
   summary: 'Run tool',
   children: child,
 })
@@ -21,6 +22,7 @@ assert.equal(button.type, 'button')
 assert.equal(button.props.type, 'button')
 assert.equal(button.props['aria-expanded'], true)
 assert.equal(button.props['aria-controls'], 'activity-details-tool-1')
+assert.equal(button.props['aria-label'], 'Show tool details')
 assert.equal(details.props.id, 'activity-details-tool-1')
 assert.equal(details.props.hidden, false)
 assert.equal(details.props.children, child, 'open details retain inline child content')

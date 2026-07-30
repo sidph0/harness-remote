@@ -168,11 +168,14 @@ export class CollabClient {
   #agents: readonly AgentSnapshot[] = frozenArray([])
   #stream: CollabSnapshot["stream"] = null
   #streamDone = false
+  #activitySequence = 0
+  #streamSequence = 0
   #working = false
   #readOnly: boolean
   #notices: readonly CollabNotice[] = frozenArray([])
   #activeTools: ReadonlyMap<string, ActiveCollabTool> = new Map()
   #completedTools = new Map<string, CompletedCollabTool>()
+  #toolSequences: ReadonlyMap<string, number> = new Map()
   #progress: ReadonlyMap<string, SubagentProgressPayload> = new Map()
   #lifecycle: ReadonlyMap<string, SubagentLifecyclePayload> = new Map()
   #uiRequest: CollabUiRequest | null = null
@@ -335,8 +338,11 @@ export class CollabClient {
     this.#agents = frozenArray([...frame.agents])
     this.#stream = null
     this.#streamDone = false
+    this.#activitySequence = 0
+    this.#streamSequence = 0
     this.#activeTools = new Map()
     this.#completedTools = new Map()
+    this.#toolSequences = new Map()
     this.#progress = new Map()
     this.#lifecycle = new Map()
     this.#working = frame.state.isStreaming
@@ -376,17 +382,27 @@ export class CollabClient {
   #applyEvent(event: AgentEvent): void {
     switch (event.type) {
       case "message_start": case "message_update":
-        if (event.message.role === "assistant") { this.#stream = event.message; this.#streamDone = false }
+        if (event.message.role === "assistant") {
+          this.#stream = event.message
+          this.#streamDone = false
+          this.#streamSequence = ++this.#activitySequence
+        }
         break
       case "message_end":
-        if (event.message.role === "assistant") { this.#stream = event.message; this.#streamDone = true }
+        if (event.message.role === "assistant") {
+          this.#stream = event.message
+          this.#streamDone = true
+          this.#streamSequence = ++this.#activitySequence
+        }
         break
       case "tool_execution_start":
         this.#activeTools = new Map(this.#activeTools).set(event.toolCallId, { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, intent: event.intent, startedAt: this.#timers.now ?? Date.now() })
+        this.#toolSequences = new Map(this.#toolSequences).set(event.toolCallId, ++this.#activitySequence)
         break
       case "tool_execution_update": {
         const current = this.#activeTools.get(event.toolCallId)
         this.#activeTools = new Map(this.#activeTools).set(event.toolCallId, current ? { ...current, args: event.args, partialResult: event.partialResult } : { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, partialResult: event.partialResult, startedAt: this.#timers.now ?? Date.now() })
+        this.#toolSequences = new Map(this.#toolSequences).set(event.toolCallId, ++this.#activitySequence)
         break
       }
       case "tool_execution_end": {
@@ -401,11 +417,16 @@ export class CollabClient {
         const completedTools = new Map(this.#completedTools)
         completedTools.delete(event.toolCallId)
         completedTools.set(event.toolCallId, completed)
-        if (completedTools.size > MAX_COMPLETED_TOOLS) completedTools.delete(completedTools.keys().next().value!)
+        const evictedTool = completedTools.size > MAX_COMPLETED_TOOLS ? completedTools.keys().next().value! : undefined
+        if (evictedTool !== undefined) completedTools.delete(evictedTool)
         this.#completedTools = completedTools
         const activeTools = new Map(this.#activeTools)
         activeTools.delete(event.toolCallId)
         this.#activeTools = activeTools
+        const toolSequences = new Map(this.#toolSequences)
+        if (evictedTool !== undefined) toolSequences.delete(evictedTool)
+        toolSequences.set(event.toolCallId, ++this.#activitySequence)
+        this.#toolSequences = toolSequences
         break
       }
       case "agent_start": this.#working = true; break
@@ -464,7 +485,7 @@ export class CollabClient {
   }
 
   #buildSnapshot(): CollabSnapshot {
-    return Object.freeze({ phase: this.#phase, header: this.#header, entries: this.#entries, state: this.#state, agents: this.#agents, stream: this.#stream, streamDone: this.#streamDone, working: this.#working, readOnly: this.#readOnly, notices: this.#notices, endedReason: this.#endedReason, activeTools: this.#activeTools, completedTools: new Map(this.#completedTools), progress: this.#progress, lifecycle: this.#lifecycle, uiRequest: this.#uiRequest })
+    return Object.freeze({ phase: this.#phase, header: this.#header, entries: this.#entries, state: this.#state, agents: this.#agents, stream: this.#stream, streamDone: this.#streamDone, streamSequence: this.#streamSequence, working: this.#working, readOnly: this.#readOnly, notices: this.#notices, endedReason: this.#endedReason, activeTools: this.#activeTools, completedTools: new Map(this.#completedTools), toolSequences: new Map(this.#toolSequences), progress: this.#progress, lifecycle: this.#lifecycle, uiRequest: this.#uiRequest })
   }
 
   #commit(): void {

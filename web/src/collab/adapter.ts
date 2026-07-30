@@ -16,8 +16,10 @@ type Snapshot = {
   readonly lifecycle: ReadonlyMap<string, unknown>
   readonly stream: Message | null
   readonly streamDone: boolean
+  readonly streamSequence: number
   readonly activeTools: ReadonlyMap<string, ActiveTool>
   readonly completedTools: ReadonlyMap<string, CompletedTool>
+  readonly toolSequences: ReadonlyMap<string, number>
   readonly working: boolean
   readonly uiRequest: UiRequest | null
 }
@@ -83,6 +85,7 @@ function messageParts(
       ...(input === undefined ? {} : { input: isRecord(input) ? input : { value: input } }),
       ...(output === undefined ? {} : { output }),
       ...(isError ? { error: output ?? "" } : {}),
+      ...(event?.intent ? { metadata: { intent: event.intent } } : {}),
       time: {
         start: event?.startedAt ?? created,
         ...(result ? { end: result.completed } : completed ? { end: completed.completedAt } : {})
@@ -215,6 +218,21 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
     const index = messages.findIndex(existing => existing.info.time.created > message.info.time.created)
     messages.splice(index < 0 ? messages.length : index, 0, message)
   }
+
+  const activitySlots: number[] = []
+  for (let index = 0; index < messages.length; index += 1) {
+    if (messages[index].info.id.startsWith("collab-stream-") || messages[index].info.id.startsWith("collab-tool-")) activitySlots.push(index)
+  }
+  const orderedActivity = activitySlots.map((index) => messages[index]).sort((a, b) => {
+    const aSequence = a.info.id.startsWith("collab-stream-")
+      ? snapshot.streamSequence
+      : snapshot.toolSequences.get(a.info.id.slice("collab-tool-".length)) ?? 0
+    const bSequence = b.info.id.startsWith("collab-stream-")
+      ? snapshot.streamSequence
+      : snapshot.toolSequences.get(b.info.id.slice("collab-tool-".length)) ?? 0
+    return aSequence - bSequence
+  })
+  for (let index = 0; index < activitySlots.length; index += 1) messages[activitySlots[index]] = orderedActivity[index]
 
   return {
     session,

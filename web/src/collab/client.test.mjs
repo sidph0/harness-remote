@@ -495,12 +495,19 @@ for (const [link, hostReadOnly, expected] of [
   }
   socket.emitFrame({ t: 'event', event: { type: 'message_update', message: assistant } })
   assert.deepEqual(snapshot(client).stream, assistant)
+  assert.equal(snapshot(client).streamSequence, 1)
+  assert.equal(snapshot(client).toolSequences.size, 0)
   socket.emitFrame({ t: 'event', event: { type: 'tool_execution_start', toolCallId: 'tool-1', toolName: 'read', args: { path: '/synthetic' }, intent: 'inspect' } })
   assert.equal(snapshot(client).activeTools.get('tool-1').toolName, 'read')
+  assert.equal(snapshot(client).toolSequences.get('tool-1'), 2)
   socket.emitFrame({ t: 'event', event: { type: 'tool_execution_update', toolCallId: 'tool-1', toolName: 'read', args: {}, partialResult: 'partial' } })
   assert.equal(snapshot(client).activeTools.get('tool-1').partialResult, 'partial')
+  assert.equal(snapshot(client).toolSequences.get('tool-1'), 3)
+  socket.emitFrame({ t: 'event', event: { type: 'message_update', message: { ...assistant, content: [{ type: 'thinking', thinking: 'resumed reasoning' }] } } })
+  assert.equal(snapshot(client).streamSequence, 4, 'a resumed stream is newer than the preceding tool update')
   socket.emitFrame({ t: 'event', event: { type: 'tool_execution_end', toolCallId: 'tool-1', toolName: 'read', result: 'done' } })
   assert.equal(snapshot(client).activeTools.has('tool-1'), false)
+  assert.equal(snapshot(client).toolSequences.get('tool-1'), 5, 'a later tool end is newer than the resumed stream')
   assert.deepEqual(snapshot(client).completedTools.get('tool-1'), {
     toolCallId: 'tool-1',
     toolName: 'read',
@@ -527,6 +534,8 @@ for (const [link, hostReadOnly, expected] of [
 
   socket.emitFrame(welcome())
   assert.equal(snapshot(client).completedTools.size, 0, 'a new host handshake must clear completed tools')
+  assert.equal(snapshot(client).streamSequence, 0, 'a new welcome resets stream receive order')
+  assert.equal(snapshot(client).toolSequences.size, 0, 'a new welcome resets tool receive order')
 
   const progress = {
     index: 0,

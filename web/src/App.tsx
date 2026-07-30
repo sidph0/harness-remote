@@ -23,7 +23,7 @@ import { attachmentFromLink, loadCollabAttachments, saveCollabAttachments } from
 import { CollabClient } from "./collab/client"
 import { adaptCollabSnapshot } from "./collab/adapter"
 import { collabSessionView, mergeCollabSessionViews } from "./collab/sessionView"
-import { currentStreamReasoningID, nextDisclosureOpen } from "./collab/activityView"
+import { currentStreamReasoningID, nextDisclosureOpen, shouldLoadPatchDiff } from "./collab/activityView"
 import { ActivityDisclosure } from "./collab/ActivityDisclosure"
 import {
   SettingsIcon,
@@ -493,20 +493,21 @@ function PatchPartView({
   sessionID,
   messageID,
   files,
-  timestamp,
+  visible,
   t
 }: {
   config: ServerConfig
   sessionID: string
   messageID: string
   files: string[]
-  timestamp?: string
+  visible: boolean
   t: Translator
 }) {
   const [diffs, setDiffs] = useState<DiffFile[] | null>(null)
-  const [expandedDiff, setExpandedDiff] = useState<DiffFile | null>(null)
+  const [expandedFile, setExpandedFile] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!shouldLoadPatchDiff(visible, diffs)) return
     let cancelled = false
     api.loadMessageDiff(config, sessionID, messageID).then((result) => {
       if (!cancelled) setDiffs(result)
@@ -516,7 +517,7 @@ function PatchPartView({
     return () => {
       cancelled = true
     }
-  }, [config.host, config.port, config.username, config.password, sessionID, messageID])
+  }, [config.host, config.port, config.username, config.password, sessionID, messageID, visible, diffs])
 
   if (diffs === null) {
     return (
@@ -532,27 +533,32 @@ function PatchPartView({
 
   return (
     <div className="message-patch">
-      {diffs.map((diff) => (
-        <button
-          key={diff.file}
-          type="button"
-          className="message-diff-row"
-          onClick={() => setExpandedDiff(diff)}
-          aria-label={t('action.showDiffFor', { file: diff.file })}
-        >
-          <span className="message-diff-file">{diff.file}</span>
-          <span className="message-diff-stats">
-            {diff.additions > 0 && <span className="diff-stat-add">+{diff.additions}</span>}
-            {diff.deletions > 0 && <span className="diff-stat-del">-{diff.deletions}</span>}
-          </span>
-        </button>
-      ))}
-
-      {expandedDiff && (
-        <Modal title={expandedDiff.file} timestamp={timestamp} onClose={() => setExpandedDiff(null)} t={t}>
-          {expandedDiff.patch && <DiffLines patch={expandedDiff.patch} />}
-        </Modal>
-      )}
+      {diffs.map((diff, index) => {
+        const detailsID = `message-patch-details-${messageID}-${index}`
+        const open = expandedFile === diff.file
+        return (
+          <ActivityDisclosure
+            key={diff.file}
+            id={detailsID}
+            open={open}
+            onToggle={() => setExpandedFile((current) => current === diff.file ? null : diff.file)}
+            summaryClassName="message-diff-row"
+            detailsClassName="message-patch-details"
+            ariaLabel={t('action.showDiffFor', { file: diff.file })}
+            summary={(
+              <>
+                <span className="message-diff-file">{diff.file}</span>
+                <span className="message-diff-stats">
+                  {diff.additions > 0 && <span className="diff-stat-add">+{diff.additions}</span>}
+                  {diff.deletions > 0 && <span className="diff-stat-del">-{diff.deletions}</span>}
+                </span>
+              </>
+            )}
+          >
+            {diff.patch && <DiffLines patch={diff.patch} />}
+          </ActivityDisclosure>
+        )
+      })}
     </div>
   )
 }
@@ -965,6 +971,7 @@ function ToolPartView({
         </>
       )}
     >
+      {part.state?.metadata?.intent && <p className="message-tool-intent">{part.state.metadata.intent}</p>}
       {todos ? (
         <TodoListView items={todos} />
       ) : questions ? (
@@ -1019,6 +1026,7 @@ function MessagePartView({
   timestamp,
   collabLive,
   liveReasoningID,
+  visible = true,
   t
 }: {
   part: MessagePart
@@ -1028,6 +1036,7 @@ function MessagePartView({
   timestamp?: string
   collabLive: boolean
   liveReasoningID?: string
+  visible?: boolean
   t: Translator
 }) {
   if (part.type === "text") {
@@ -1058,7 +1067,7 @@ function MessagePartView({
         sessionID={sessionID}
         messageID={part.messageID}
         files={part.files}
-        timestamp={timestamp}
+        visible={visible}
         t={t}
       />
     )
@@ -1243,6 +1252,7 @@ function ActionGroupView({
             timestamp={timestamp}
             collabLive={collabLive}
             liveReasoningID={liveReasoningID}
+            visible={open}
             t={t}
           />
         </Fragment>
