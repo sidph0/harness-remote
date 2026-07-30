@@ -5,9 +5,32 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 const icons = readFileSync(new URL('./Icons.tsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 const appCode = app
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\/\/[^\r\n]*/g, '')
+
+const viewportTag = [...index.matchAll(/<meta\b[^>]*>/gi)]
+  .map(([tag]) => tag)
+  .find((tag) => /(?:^|\s)name\s*=\s*(["'])viewport\1/i.test(tag))
+assert.ok(viewportTag, 'the document should declare a viewport')
+const viewportContent = viewportTag.match(/(?:^|\s)content\s*=\s*(["'])(.*?)\1/i)?.[2]
+assert.ok(viewportContent, 'the viewport should declare content')
+const viewport = new Map(viewportContent.split(',').map((directive) => directive.trim().split(/\s*=\s*/, 2)))
+assert.equal(viewport.get('width'), 'device-width', 'the viewport should follow device width')
+assert.equal(viewport.get('initial-scale'), '1.0', 'the viewport should retain its initial scale')
+assert.equal(viewport.get('interactive-widget'), 'resizes-content', 'the viewport should keep keyboard-aware resizing')
+assert.equal(viewport.get('viewport-fit'), 'cover', 'native iOS should expose notch and Dynamic Island safe-area insets')
+const nativeShell = styles.match(/\.app-shell\.ios-native\s*\{([^}]*)\}/s)?.[1]
+assert.ok(nativeShell, 'native iOS should define an app shell')
+for (const edge of ['top', 'right', 'bottom', 'left']) {
+  assert.match(nativeShell, new RegExp(`env\\(safe-area-inset-${edge}\\)`), `the native shell should consume the ${edge} safe-area inset`)
+}
+const nativeBottomNav = styles.match(/\.ios-native \.bottom-nav\s*\{([^}]*)\}/s)?.[1]
+assert.ok(nativeBottomNav, 'native iOS should define bottom navigation')
+for (const edge of ['right', 'bottom', 'left']) {
+  assert.match(nativeBottomNav, new RegExp(`env\\(safe-area-inset-${edge}\\)`), `bottom navigation should consume the ${edge} safe-area inset`)
+}
 
 const refreshButton = app.match(/<button onClick=\{refreshSessionsWithIndicator\}[\s\S]*?\{t\('sessions\.refresh'\)\}[\s\S]*?<\/button>/)
 assert.ok(refreshButton, 'sessions refresh button should call refreshSessionsWithIndicator')

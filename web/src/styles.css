@@ -2765,7 +2765,7 @@ button.btn-icon.compact {
   width: 100%;
   max-width: none;
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 0.5rem) 0 calc(64px + env(safe-area-inset-bottom));
+  padding: calc(env(safe-area-inset-top) + 0.5rem) env(safe-area-inset-right) calc(64px + env(safe-area-inset-bottom)) env(safe-area-inset-left);
   gap: 0;
   overflow-x: clip;
   background: #000000;
@@ -3243,7 +3243,7 @@ button.btn-icon.compact {
   border: 0;
   border-top: 1px solid rgba(84, 84, 88, 0.58);
   border-radius: 0;
-  padding: 0.25rem 0.5rem env(safe-area-inset-bottom);
+  padding: 0.25rem calc(0.5rem + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(0.5rem + env(safe-area-inset-left));
   background: rgba(28, 28, 30, 0.9);
   box-shadow: none;
   backdrop-filter: blur(20px);

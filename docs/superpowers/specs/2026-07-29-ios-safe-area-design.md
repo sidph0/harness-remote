@@ -21,21 +21,28 @@ Add `viewport-fit=cover` to the existing viewport metadata without removing `int
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 ```
 
-Keep the existing native shell rule:
+Apply every device-reported inset to content that becomes edge-to-edge:
 
 ```css
-padding: calc(env(safe-area-inset-top) + 0.5rem) 0 calc(64px + env(safe-area-inset-bottom));
+.app-shell.ios-native {
+  padding: calc(env(safe-area-inset-top) + 0.5rem) env(safe-area-inset-right) calc(64px + env(safe-area-inset-bottom)) env(safe-area-inset-left);
+}
+
+.ios-native .bottom-nav {
+  padding: 0.25rem calc(0.5rem + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(0.5rem + env(safe-area-inset-left));
+}
 ```
 
-This leaves the black root background behind the system status area and dynamically moves the app content below the safe-area boundary. The additional `0.5rem` remains ordinary visual spacing after the system-controlled inset.
+This leaves the black root background behind the system areas while dynamically moving headings below the status bar and interactive content away from a landscape notch or rounded corner. The additional `0.5rem` remains ordinary visual spacing after the system-controlled inset.
 
-The bottom navigation continues using `safe-area-inset-bottom`. Landscape and future iPhone geometry remain system-controlled; there are no per-model media queries, fixed notch heights, user-agent checks, or Status Bar plugin dependency.
+Landscape and future iPhone geometry remain system-controlled; there are no per-model media queries, fixed notch heights, user-agent checks, or Status Bar plugin dependency.
 
 ## Scope
 
 Modify only:
 
 - `web/index.html`
+- `web/src/styles.css`
 - `web/src/ui-regression.test.mjs`
 
 Do not change headings, panel spacing, Capacitor configuration, native status-bar appearance, or Android/browser layouts.
@@ -47,7 +54,8 @@ The UI regression reads `web/index.html` and verifies:
 - the viewport retains `width=device-width` and `initial-scale=1.0`;
 - `interactive-widget=resizes-content` remains present for keyboard handling;
 - `viewport-fit=cover` is present;
-- the native shell still consumes both top and bottom safe-area environment variables.
+- the native shell consumes all four safe-area environment variables;
+- fixed bottom navigation consumes the left, right, and bottom safe-area environment variables.
 
 The regression must fail before the metadata change and pass after it.
 
