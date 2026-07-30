@@ -22,6 +22,7 @@ import { attachmentFromLink, loadCollabAttachments, saveCollabAttachments } from
 import { CollabClient } from "./collab/client"
 import { adaptCollabSnapshot } from "./collab/adapter"
 import { collabSessionView, mergeCollabSessionViews } from "./collab/sessionView"
+import { currentStreamReasoningID, nextDisclosureOpen } from "./collab/activityView"
 import {
   SettingsIcon,
   FolderIcon,
@@ -921,8 +922,8 @@ function ToolPartView({
 }) {
   const status = part.state?.status || "pending"
   const live = activityIsLive(part, collabLive)
-  const [open, setOpen] = useState(live)
-  useEffect(() => setOpen(live), [live])
+  const [open, setOpen] = useState(() => nextDisclosureOpen(false, live))
+  useEffect(() => setOpen((current) => nextDisclosureOpen(current, live)), [live])
   const detailsID = `message-tool-details-${part.id}`
   const command = toolCommandLabel(part)
   const { label, diff } = describeToolAction(part, directory, t)
@@ -943,7 +944,7 @@ function ToolPartView({
         className={`message-tool-summary message-tool-${status}`}
         aria-expanded={open}
         aria-controls={detailsID}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
       >
         <span className="message-tool-label">{label}</span>
         <span className="message-tool-meta">
@@ -994,8 +995,8 @@ function ReasoningPartView({
   t: Translator
 }) {
   const live = activityIsLive(part, collabLive, liveReasoningID)
-  const [open, setOpen] = useState(live)
-  useEffect(() => setOpen(live), [live])
+  const [open, setOpen] = useState(() => nextDisclosureOpen(false, live))
+  useEffect(() => setOpen((current) => nextDisclosureOpen(current, live)), [live])
   if (!part.text) return null
   const label = reasoningLabel([part], t)
   const detailsID = `message-reasoning-details-${part.id}`
@@ -1006,7 +1007,7 @@ function ReasoningPartView({
         className="message-reasoning-summary"
         aria-expanded={open}
         aria-controls={detailsID}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
       >
         {label}
       </button>
@@ -1226,8 +1227,8 @@ function ActionGroupView({
   t: Translator
 }) {
   const live = parts.some((part) => activityIsLive(part, collabLive, liveReasoningID))
-  const [open, setOpen] = useState(live)
-  useEffect(() => setOpen(live), [live])
+  const [open, setOpen] = useState(() => nextDisclosureOpen(false, live))
+  useEffect(() => setOpen((current) => nextDisclosureOpen(current, live)), [live])
   const detailsID = `message-action-details-${parts[0].id}`
   return (
     <>
@@ -1236,7 +1237,7 @@ function ActionGroupView({
         className="message-action-summary"
         aria-expanded={open}
         aria-controls={detailsID}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
       >
         <span>{summarizeActionGroup(parts, t)}</span>
       </button>
@@ -1985,7 +1986,7 @@ function App() {
     ? adaptCollabSnapshot(selectedCollabEntry.client.getSnapshot(), { sendUiResponse: (requestID, value) => selectedCollabEntry.client.sendUiResponse(requestID, value) })
     : null
   const selectedLiveReasoningID = selectedCollabSnapshot?.phase === "live"
-    ? selectedCollabData?.messages.find((message) => message.info.id.startsWith("collab-stream-"))?.parts.find((part) => part.type === "reasoning")?.id
+    ? currentStreamReasoningID(selectedCollabData?.messages ?? [])
     : undefined
   const selectedCollabRequest = selectedCollabData?.uiRequest ?? null
   const selectedCollabNotice = selectedCollabSnapshot?.notices[selectedCollabSnapshot.notices.length - 1] ?? null
