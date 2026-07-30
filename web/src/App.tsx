@@ -4138,7 +4138,7 @@ function App() {
           {!selectedCollabReadOnly && <div className="composer" ref={composerRef}>
             <textarea
               ref={composerTextareaRef}
-              rows={1}
+              rows={isNativeIOS ? 1 : undefined}
               value={composer}
               onChange={(event) => setComposer(event.target.value)}
               placeholder={t('detail.composerPlaceholder')}
