@@ -689,47 +689,6 @@ function JumpControls({
   )
 }
 
-let modalTitleSequence = 0
-
-/** Shared full-detail modal — everything that isn't the primary output text (thoughts, tool calls, edits) is
- *  surfaced through this rather than inline collapsible/expandable regions. */
-function Modal({
-  title,
-  timestamp,
-  onClose,
-  children,
-  t
-}: {
-  title: string
-  timestamp?: string
-  onClose: () => void
-  children: ReactNode
-  t: Translator
-}) {
-  const [titleID] = useState(() => `modal-title-${++modalTitleSequence}`)
-  return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section
-        className="modal-card diff-modal fade-in"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleID}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="diff-modal-header">
-          <div className="diff-modal-heading">
-            <h2 id={titleID}>{title}</h2>
-            {timestamp && <small className="diff-modal-timestamp">{timestamp}</small>}
-          </div>
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            {t('action.close')}
-          </button>
-        </div>
-        <div className="diff-modal-body">{children}</div>
-      </section>
-    </div>
-  )
-}
 
 /** Wraps children with `wrapper(children)` only when `condition` holds, otherwise renders children
  *  as-is. Lets a panel's body be written once and reused unmodified in both its mobile inline form
@@ -746,9 +705,8 @@ function ConditionalWrapper({
   return <>{condition ? wrapper(children) : children}</>
 }
 
-/** Desktop-only modal shell for panels (settings, help) that already render their own heading —
- *  unlike Modal, it has no title bar of its own, just a close affordance, so the panel's existing
- *  content isn't duplicated under a second title. */
+/** Desktop-only modal shell for panels (settings, help) that already render their own heading.
+ * It has no title bar of its own, just a close affordance, so the panel heading is not duplicated. */
 function DesktopModalOverlay({
   onClose,
   ariaLabel,
@@ -1023,7 +981,6 @@ function MessagePartView({
   config,
   sessionID,
   directory,
-  timestamp,
   collabLive,
   liveReasoningID,
   visible = true,
@@ -1033,7 +990,6 @@ function MessagePartView({
   config: ServerConfig
   sessionID: string
   directory?: string
-  timestamp?: string
   collabLive: boolean
   liveReasoningID?: string
   visible?: boolean
@@ -1214,7 +1170,6 @@ function ActionGroupView({
   config,
   sessionID,
   directory,
-  timestamp,
   collabLive,
   liveReasoningID,
   t
@@ -1223,7 +1178,6 @@ function ActionGroupView({
   config: ServerConfig
   sessionID: string
   directory?: string
-  timestamp?: string
   collabLive: boolean
   liveReasoningID?: string
   t: Translator
@@ -1249,7 +1203,6 @@ function ActionGroupView({
             config={config}
             sessionID={sessionID}
             directory={directory}
-            timestamp={timestamp}
             collabLive={collabLive}
             liveReasoningID={liveReasoningID}
             visible={open}
@@ -1498,7 +1451,6 @@ type RenderGroup =
       kind: "run"
       key: string
       items: TimelineItem[]
-      messagesByID: Map<string, MessageEnvelope & { text: string }>
       sessionID: string
     }
 
@@ -1520,12 +1472,10 @@ function groupRenderedMessages(messages: (MessageEnvelope & { text: string })[])
       for (const message of buffer) groups.push({ kind: "message", message })
     } else {
       const items = buildMessageTimeline(buffer.flatMap((message) => message.parts))
-      const messagesByID = new Map(buffer.map((message) => [message.info.id, message]))
       groups.push({
         kind: "run",
         key: `run-${buffer[0].info.id}`,
         items,
-        messagesByID,
         sessionID: buffer[buffer.length - 1].info.sessionID
       })
     }
@@ -1543,11 +1493,9 @@ function groupRenderedMessages(messages: (MessageEnvelope & { text: string })[])
   return groups
 }
 
-/** Renders one run's continuous timeline (see groupRenderedMessages) as a single message bubble, resolving
- *  each item's timestamp to the specific message that produced it. */
+/** Renders one run's continuous timeline (see groupRenderedMessages) as a single message bubble. */
 function ConversationRunView({
   items,
-  messagesByID,
   sessionID,
   config,
   directory,
@@ -1556,7 +1504,6 @@ function ConversationRunView({
   t
 }: {
   items: TimelineItem[]
-  messagesByID: Map<string, MessageEnvelope & { text: string }>
   sessionID: string
   config: ServerConfig
   directory: string | undefined
@@ -1564,11 +1511,6 @@ function ConversationRunView({
   liveReasoningID?: string
   t: Translator
 }) {
-  const fallback = [...messagesByID.values()].pop()
-  const timestampFor = (part: MessagePart) => {
-    const owner = (part.messageID && messagesByID.get(part.messageID)) || fallback
-    return owner ? formatTime(owner.info.time.created) : undefined
-  }
   return (
     <article className="message assistant fade-in">
       {items.map((item) =>
@@ -1579,7 +1521,6 @@ function ConversationRunView({
             config={config}
             sessionID={sessionID}
             directory={directory}
-            timestamp={timestampFor(item.parts[item.parts.length - 1])}
             collabLive={collabLive}
             liveReasoningID={liveReasoningID}
             t={t}
@@ -1591,7 +1532,6 @@ function ConversationRunView({
             config={config}
             sessionID={sessionID}
             directory={directory}
-            timestamp={timestampFor(item.part)}
             collabLive={collabLive}
             liveReasoningID={liveReasoningID}
             t={t}
@@ -1630,7 +1570,6 @@ const MessageArticle = memo(function MessageArticle({
             config={config}
             sessionID={message.info.sessionID}
             directory={directory}
-            timestamp={formatTime(message.info.time.created)}
             collabLive={collabLive}
             liveReasoningID={liveReasoningID}
             t={t}
@@ -1642,7 +1581,6 @@ const MessageArticle = memo(function MessageArticle({
             config={config}
             sessionID={message.info.sessionID}
             directory={directory}
-            timestamp={formatTime(message.info.time.created)}
             collabLive={collabLive}
             liveReasoningID={liveReasoningID}
             t={t}
@@ -1736,7 +1674,6 @@ const MessagesPane = memo(function MessagesPane({
                 <ConversationRunView
                   key={group.key}
                   items={group.items}
-                  messagesByID={group.messagesByID}
                   sessionID={group.sessionID}
                   config={config}
                   directory={directory}
