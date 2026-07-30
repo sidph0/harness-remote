@@ -3160,6 +3160,20 @@ button.btn-icon.compact {
   border-bottom: 1px solid #38383A;
 }
 
+.ios-native .help > .help-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  overflow: visible;
+}
+
+.ios-native .help > .help-tabs button {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  white-space: normal;
+}
+
 .ios-native .help-tabs::-webkit-scrollbar {
   display: none;
 }
