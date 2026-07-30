@@ -2840,20 +2840,17 @@ button.btn-icon.compact {
 }
 
 .ios-native .sessions .section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   padding-top: 0.25rem;
-}
-
-.ios-native .ios-sessions-title {
-  padding-right: 9.25rem;
 }
 
 .ios-native .sessions-header-actions {
   display: flex;
   flex-wrap: nowrap;
   grid-template-columns: none;
-  position: absolute;
-  top: 0.25rem;
-  right: 0.75rem;
+  position: static;
   gap: 0.5rem;
 }
 
