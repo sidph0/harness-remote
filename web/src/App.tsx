@@ -23,7 +23,7 @@ import { attachmentFromLink, loadCollabAttachments, saveCollabAttachments } from
 import { CollabClient } from "./collab/client"
 import { adaptCollabSnapshot } from "./collab/adapter"
 import { collabSessionView, mergeCollabSessionViews } from "./collab/sessionView"
-import { currentStreamReasoningID, nextDisclosureOpen, shouldLoadPatchDiff } from "./collab/activityView"
+import { nextDisclosureOpen, shouldLoadPatchDiff } from "./collab/activityView"
 import { ActivityDisclosure } from "./collab/ActivityDisclosure"
 import {
   SettingsIcon,
@@ -1922,7 +1922,7 @@ function App() {
     ? adaptCollabSnapshot(selectedCollabEntry.client.getSnapshot(), { sendUiResponse: (requestID, value) => selectedCollabEntry.client.sendUiResponse(requestID, value) })
     : null
   const selectedLiveReasoningID = selectedCollabSnapshot?.phase === "live"
-    ? currentStreamReasoningID(selectedCollabData?.messages ?? [])
+    ? selectedCollabData?.streamReasoningID
     : undefined
   const selectedCollabRequest = selectedCollabData?.uiRequest ?? null
   const selectedCollabNotice = selectedCollabSnapshot?.notices[selectedCollabSnapshot.notices.length - 1] ?? null

@@ -184,6 +184,7 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
     messages.push({ info: { id: entry.id, role: "user", sessionID, time: { created } }, parts })
   }
 
+  let streamReasoningID: string | undefined
   if (snapshot.stream) {
     const streamCreated = timestamp(snapshot.stream.timestamp)
     const committed = snapshot.streamDone && snapshot.entries.some(entry =>
@@ -193,6 +194,10 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
       const streamMessage: MessageEnvelope = {
         info: { id, role: "assistant", sessionID, time: { created: streamCreated } },
         parts: messageParts(id, snapshot.stream, streamCreated, results, snapshot.activeTools, snapshot.completedTools, seenTools)
+      }
+      if (!snapshot.streamDone) {
+        const trailing = streamMessage.parts[streamMessage.parts.length - 1]
+        if (trailing?.type === "reasoning") streamReasoningID = trailing.id
       }
       activitySequences.set(streamMessage, snapshot.streamSequence)
       messages.push(streamMessage)
@@ -239,6 +244,7 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
     session,
     status,
     messages,
+    streamReasoningID,
     agents: snapshot.agents.map(agent => ({
       id: agent.id,
       name: agent.displayName,

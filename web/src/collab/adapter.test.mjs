@@ -219,6 +219,24 @@ assert.deepEqual(streaming.messages, [{
     text: 'Partial answer'
   }]
 }])
+const liveReasoning = adaptCollabSnapshot(snapshot({
+  entries: [{
+    type: 'message',
+    id: 'collab-stream-durable-reasoning',
+    timestamp: '2026-07-28T12:00:05.000Z',
+    message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'Historical reasoning' }], timestamp: 1_785_240_005_000 }
+  }],
+  stream: { ...streamingMessage, content: [{ type: 'thinking', thinking: 'Live reasoning' }] }
+}))
+assert.equal(liveReasoning.streamReasoningID, 'collab-stream-1785240006000:reasoning:0', 'the adapter identifies only its active synthetic stream reasoning')
+assert.equal(adaptCollabSnapshot(snapshot({ entries: liveReasoning.messages.slice(0, 1).map(message => ({
+  type: 'message', id: message.info.id, timestamp: new Date(message.info.time.created).toISOString(),
+  message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'Historical reasoning' }], timestamp: message.info.time.created }
+})) })).streamReasoningID, undefined, 'a durable prefix-colliding reasoning entry is never live')
+assert.equal(adaptCollabSnapshot(snapshot({
+  stream: { ...streamingMessage, content: [{ type: 'thinking', thinking: 'Completed reasoning' }] },
+  streamDone: true
+})).streamReasoningID, undefined, 'a completed synthetic stream reasoning is no longer live')
 const committedStream = adaptCollabSnapshot(snapshot({
   entries: [{
     type: 'message',
