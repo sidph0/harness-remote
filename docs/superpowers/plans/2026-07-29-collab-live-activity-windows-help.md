@@ -217,37 +217,48 @@ git commit -m "feat: adapt live collab activity results"
 ### Task 3: Preserve attachment-backed cards and render adaptive inline activity
 
 **Files:**
+- Create: `web/src/collab/sessionView.ts`
+- Create: `web/src/collab/sessionView.test.mjs`
 - Modify: `web/src/App.tsx:1048-1217,2063-2110,2912-2945,3329-3439,4092-4110`
 - Modify: `web/src/styles.css:1055-1151`
-- Test: `web/src/ui-regression.test.mjs`
+- Modify: `web/package.json`
 
 **Interfaces:**
 - Consumes: `CollabAttachment[]`, `CollabSnapshot.completedTools`, and adapter output from Tasks 1–2.
 - Produces: stable `SessionView` records and inline activity UI with live expansion and completed disclosure rows.
 
-- [ ] **Step 1: Add failing source-level regression assertions.**
+- [ ] **Step 1: Add failing behavior tests for attachment-backed session views.**
 
-In `web/src/ui-regression.test.mjs`, assert the source contains the stable attachment merge and adaptive activity contracts:
+Create `web/src/collab/sessionView.test.mjs` and import the pure session-view helper from `sessionView.ts`. Cover these observable contracts:
 
 ```js
-assert.match(app, /collabAttachmentsRef\.current/, 'Collab session merge must use persisted attachments')
-assert.match(app, /attachment\.name/, 'Collab card identity must retain attachment name')
-assert.match(app, /Math\.max\(previous\.updated/, 'Collab activity time must not move backward')
-assert.match(app, /completedTools/, 'Collab UI must consume completed live tool activity')
-assert.match(app, /collab-activity/, 'Collab activity must have an inline layout')
-assert.match(app, /aria-expanded/, 'Collab activity rows must expose disclosure state')
-assert.equal(app.includes('<Modal title={summarizeActionGroup'), false, 'Activity groups must not require a modal')
+const attachment = { id: 'desktop-build', name: 'Desktop build', link: 'secret', readOnly: false }
+const initial = collabSessionView(attachment, undefined, undefined, 200)
+assert.equal(initial.id, 'collab:desktop-build')
+assert.equal(initial.title, 'Desktop build')
+assert.equal(initial.directory, 'OMP Collab')
+
+const updated = collabSessionView(attachment, initial, {
+  title: 'Older host title', directory: 'C:\\work', updated: 100,
+  files: 0, additions: 0, deletions: 0, status: 'idle', external: true
+}, 300)
+assert.equal(updated.title, 'Desktop build')
+assert.equal(updated.directory, 'C:\\work')
+assert.equal(updated.updated, 200)
+
+const merged = mergeCollabSessionViews([directSession], [attachment], new Map(), 200)
+assert.ok(merged.some((session) => session.id === 'collab:desktop-build'))
 ```
 
-Cover the required behavior in the browser verification task: an attachment named `Desktop build` whose host header title is `Older host title` and timestamp is earlier than attachment creation must still render as `Desktop build` and must not sort behind newer sessions.
+Also cover that an ended view remains in the merge and that removing the attachment removes the synthetic card. Add this test to `npm run test:collab` in `web/package.json`.
 
-- [ ] **Step 2: Run the UI regression and verify it fails.**
+- [ ] **Step 2: Run the focused behavior test and verify it fails.**
 
 ```bash
-node src/ui-regression.test.mjs
+bun src/collab/sessionView.test.mjs
 ```
 
-Expected: FAIL because `mergeCollabSessions` currently derives existence from `collabClientsRef` and `ActionGroupView` opens a modal.
+Expected: FAIL because `sessionView.ts` and its helpers do not exist yet.
 
 - [ ] **Step 3: Make the attachment list the card source of truth.**
 
@@ -314,20 +325,21 @@ Add inline activity rules near the existing message action rules:
 
 Reuse existing variables and do not introduce a second mobile breakpoint system.
 
-- [ ] **Step 6: Run the UI regression and build.**
+- [ ] **Step 6: Run the Collab behavior tests, UI regression, and build.**
 
 ```bash
+npm run test:collab
 node src/ui-regression.test.mjs
 npm run build
 ```
 
-Expected: the UI regression prints its success message and Vite completes without TypeScript errors.
+Expected: the Collab behavior tests and UI regression print success messages and Vite completes without TypeScript errors.
 
 - [ ] **Step 7: Commit stable cards and inline activity.**
 
 ```bash
-git add web/src/App.tsx web/src/styles.css web/src/ui-regression.test.mjs
- git commit -m "feat: stabilize collab cards and inline activity"
+git add web/src/collab/sessionView.ts web/src/collab/sessionView.test.mjs web/src/App.tsx web/src/styles.css web/package.json
+git commit -m "feat: stabilize collab cards and inline activity"
 ```
 
 ---
@@ -335,32 +347,43 @@ git add web/src/App.tsx web/src/styles.css web/src/ui-regression.test.mjs
 ### Task 4: Add Windows PowerShell connection commands
 
 **Files:**
+- Create: `web/src/helpCommands.ts`
+- Create: `web/src/helpCommands.test.mjs`
 - Modify: `web/src/App.tsx:4499-4526`
-- Test: `web/src/settings-regression.test.mjs`
+- Modify: `web/package.json`
 
 **Interfaces:**
 - Consumes: `config.backend`, `helpBackendName`, `helpPort`, and existing Help tab state.
 - Produces: per-backend macOS/Linux and Windows PowerShell startup blocks, with credential values supplied through environment variables.
 
-- [ ] **Step 1: Add failing Help assertions.**
+- [ ] **Step 1: Add failing behavior tests for generated host commands.**
 
-Append to `web/src/settings-regression.test.mjs`:
+Create `web/src/helpCommands.test.mjs`, import `connectionHelpCommands` from `helpCommands.ts`, and assert the returned platform labels and command strings for all four backends:
 
 ```js
-assert.ok(app.includes('Windows PowerShell'), 'Connections Help should label PowerShell commands')
-assert.ok(app.includes('$env:HARNESS_REMOTE_USERNAME'), 'Windows bridge commands should use username environment variables')
-assert.ok(app.includes('$env:HARNESS_REMOTE_PASSWORD'), 'Windows bridge commands should use password environment variables')
-assert.ok(app.includes('npx.cmd -y opencode-ai serve'), 'Windows Help should show the OpenCode PowerShell server command')
-assert.ok(app.includes('--backend pi') && app.includes('--backend claude'), 'Windows bridge commands should preserve backend selection')
+for (const backend of ['omp', 'pi', 'claude', 'opencode']) {
+  const commands = connectionHelpCommands(backend)
+  assert.equal(commands.length, 2)
+  assert.equal(commands[0].platform, 'macOS / Linux')
+  assert.equal(commands[1].platform, 'Windows PowerShell')
+}
+
+assert.match(connectionHelpCommands('omp')[1].command, /\$env:HARNESS_REMOTE_USERNAME/)
+assert.doesNotMatch(connectionHelpCommands('omp')[1].command, /--password/)
+assert.match(connectionHelpCommands('pi')[1].command, /--backend pi/)
+assert.match(connectionHelpCommands('claude')[1].command, /--backend claude/)
+assert.match(connectionHelpCommands('opencode')[1].command, /npx\.cmd -y opencode-ai serve/)
 ```
 
-- [ ] **Step 2: Run the settings regression and verify it fails.**
+Add the behavior test to `npm run test:settings` in `web/package.json`; do not add new source-text assertions.
+
+- [ ] **Step 2: Run the focused behavior test and verify it fails.**
 
 ```bash
-node src/settings-regression.test.mjs
+node --experimental-strip-types src/helpCommands.test.mjs
 ```
 
-Expected: FAIL because Connections currently renders only one platform-specific block and embeds credentials in command arguments.
+Expected: FAIL because `helpCommands.ts` and `connectionHelpCommands` do not exist yet.
 
 - [ ] **Step 3: Render both platform blocks with safe credential placeholders.**
 
@@ -392,10 +415,10 @@ npx.cmd -y opencode-ai serve --hostname 0.0.0.0 --port 4096
 
 Keep the existing `curl.exe` health check, Tailscale Serve, firewall, CORS, and bearer-link security copy. Make the code blocks wrap or scroll on narrow iOS screens; do not put credentials into a URL or log.
 
-- [ ] **Step 4: Run the settings regression and build.**
+- [ ] **Step 4: Run the settings behavior tests and build.**
 
 ```bash
-node src/settings-regression.test.mjs
+npm run test:settings
 npm run build
 ```
 
@@ -404,8 +427,8 @@ Expected: both commands pass.
 - [ ] **Step 5: Commit the Help change.**
 
 ```bash
-git add web/src/App.tsx web/src/settings-regression.test.mjs
- git commit -m "feat: document Windows PowerShell connections"
+git add web/src/helpCommands.ts web/src/helpCommands.test.mjs web/src/App.tsx web/package.json
+git commit -m "feat: document Windows PowerShell connections"
 ```
 
 ---
@@ -427,11 +450,12 @@ From `web`:
 ```bash
 node --experimental-strip-types src/collab/client.test.mjs
 node --experimental-strip-types src/collab/adapter.test.mjs
+bun src/collab/sessionView.test.mjs
 node src/ui-regression.test.mjs
-node src/settings-regression.test.mjs
+npm run test:settings
 ```
 
-Expected: all four scripts print their success messages.
+Expected: all five commands print their success messages.
 
 - [ ] **Step 2: Run the remaining web regression tests.**
 
