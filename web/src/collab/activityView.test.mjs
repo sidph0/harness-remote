@@ -19,6 +19,14 @@ assert.equal(
   'current',
   'only the trailing reasoning segment is current',
 )
+assert.equal(
+  currentStreamReasoningID([
+    ...stream([reasoning('stream-current')]),
+    { info: { id: 'collab-tool-running-later' }, parts: [{ id: 'later-tool', type: 'tool', state: { status: 'running' } }] },
+  ]),
+  undefined,
+  'later event-only tool activity ends prior stream reasoning',
+)
 
 assert.equal(nextDisclosureOpen(false, true), true, 'live activity opens')
 assert.equal(nextDisclosureOpen(true, false), false, 'completed activity collapses')

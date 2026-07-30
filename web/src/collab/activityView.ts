@@ -3,7 +3,8 @@ import type { MessageEnvelope } from "../types"
 export function currentStreamReasoningID(messages: readonly MessageEnvelope[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (!message.info.id.startsWith("collab-stream-")) continue
+    if (message.parts.length === 0) continue
+    if (!message.info.id.startsWith("collab-stream-")) return undefined
     const trailing = message.parts[message.parts.length - 1]
     return trailing?.type === "reasoning" ? trailing.id : undefined
   }
