@@ -264,6 +264,18 @@ export type ActiveCollabTool = {
   readonly startedAt: number
 }
 
+export type CompletedCollabTool = {
+  readonly toolCallId: string
+  readonly toolName: string
+  readonly args: unknown
+  readonly intent?: string
+  readonly partialResult?: unknown
+  readonly result: unknown
+  readonly isError: boolean
+  readonly startedAt: number
+  readonly completedAt: number
+}
+
 export type CollabNotice = {
   readonly id: number
   readonly level: "info" | "warning" | "error"
@@ -284,6 +296,7 @@ export type CollabSnapshot = {
   readonly notices: readonly CollabNotice[]
   readonly endedReason: string | null
   readonly activeTools: ReadonlyMap<string, ActiveCollabTool>
+  readonly completedTools: ReadonlyMap<string, CompletedCollabTool>
   readonly progress: ReadonlyMap<string, SubagentProgressPayload>
   readonly lifecycle: ReadonlyMap<string, SubagentLifecyclePayload>
   readonly uiRequest: CollabUiRequest | null

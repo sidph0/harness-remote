@@ -13,18 +13,20 @@ import type {
   SubagentLifecyclePayload,
   SubagentProgressPayload,
 } from "@oh-my-pi/pi-wire"
-import type { ActiveCollabTool, CollabNotice, CollabSnapshot } from "../types"
+import type { ActiveCollabTool, CollabNotice, CollabSnapshot, CompletedCollabTool } from "../types"
 import { encodeBase64Url, parseCollabLink } from "./link"
 import { CollabSocket } from "./socket"
 
 const HANDSHAKE_TIMEOUT_MS = 30_000
 const SNAPSHOT_TIMEOUT_MS = 30_000
 const MAX_NOTICES = 50
+const MAX_COMPLETED_TOOLS = 256
 
 type Timer = number
 type Timers = {
   setTimeout(callback: () => void, delay: number): number
   clearTimeout(timer: number): void
+  readonly now?: number
 }
 type SocketLike = {
   onOpen?: () => void
@@ -170,6 +172,7 @@ export class CollabClient {
   #readOnly: boolean
   #notices: readonly CollabNotice[] = frozenArray([])
   #activeTools: ReadonlyMap<string, ActiveCollabTool> = new Map()
+  #completedTools = new Map<string, CompletedCollabTool>()
   #progress: ReadonlyMap<string, SubagentProgressPayload> = new Map()
   #lifecycle: ReadonlyMap<string, SubagentLifecyclePayload> = new Map()
   #uiRequest: CollabUiRequest | null = null
@@ -333,6 +336,7 @@ export class CollabClient {
     this.#stream = null
     this.#streamDone = false
     this.#activeTools = new Map()
+    this.#completedTools = new Map()
     this.#progress = new Map()
     this.#lifecycle = new Map()
     this.#working = frame.state.isStreaming
@@ -378,14 +382,32 @@ export class CollabClient {
         if (event.message.role === "assistant") { this.#stream = event.message; this.#streamDone = true }
         break
       case "tool_execution_start":
-        this.#activeTools = new Map(this.#activeTools).set(event.toolCallId, { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, intent: event.intent, startedAt: Date.now() })
+        this.#activeTools = new Map(this.#activeTools).set(event.toolCallId, { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, intent: event.intent, startedAt: this.#timers.now ?? Date.now() })
         break
       case "tool_execution_update": {
         const current = this.#activeTools.get(event.toolCallId)
-        this.#activeTools = new Map(this.#activeTools).set(event.toolCallId, current ? { ...current, partialResult: event.partialResult } : { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, partialResult: event.partialResult, startedAt: Date.now() })
+        this.#activeTools = new Map(this.#activeTools).set(event.toolCallId, current ? { ...current, args: event.args, partialResult: event.partialResult } : { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, partialResult: event.partialResult, startedAt: this.#timers.now ?? Date.now() })
         break
       }
-      case "tool_execution_end": { const next = new Map(this.#activeTools); next.delete(event.toolCallId); this.#activeTools = next; break }
+      case "tool_execution_end": {
+        const completedAt = this.#timers.now ?? Date.now()
+        const active = this.#activeTools.get(event.toolCallId)
+        const completed: CompletedCollabTool = {
+          ...(active ?? { toolCallId: event.toolCallId, toolName: event.toolName, args: {}, startedAt: completedAt }),
+          result: event.result,
+          isError: event.isError ?? false,
+          completedAt,
+        }
+        const completedTools = new Map(this.#completedTools)
+        completedTools.delete(event.toolCallId)
+        completedTools.set(event.toolCallId, completed)
+        if (completedTools.size > MAX_COMPLETED_TOOLS) completedTools.delete(completedTools.keys().next().value!)
+        this.#completedTools = completedTools
+        const activeTools = new Map(this.#activeTools)
+        activeTools.delete(event.toolCallId)
+        this.#activeTools = activeTools
+        break
+      }
       case "agent_start": this.#working = true; break
       case "agent_end": this.#working = false; break
       case "notice": this.#pushNotice(event.level, event.message); break
@@ -442,7 +464,7 @@ export class CollabClient {
   }
 
   #buildSnapshot(): CollabSnapshot {
-    return Object.freeze({ phase: this.#phase, header: this.#header, entries: this.#entries, state: this.#state, agents: this.#agents, stream: this.#stream, streamDone: this.#streamDone, working: this.#working, readOnly: this.#readOnly, notices: this.#notices, endedReason: this.#endedReason, activeTools: this.#activeTools, progress: this.#progress, lifecycle: this.#lifecycle, uiRequest: this.#uiRequest })
+    return Object.freeze({ phase: this.#phase, header: this.#header, entries: this.#entries, state: this.#state, agents: this.#agents, stream: this.#stream, streamDone: this.#streamDone, working: this.#working, readOnly: this.#readOnly, notices: this.#notices, endedReason: this.#endedReason, activeTools: this.#activeTools, completedTools: new Map(this.#completedTools), progress: this.#progress, lifecycle: this.#lifecycle, uiRequest: this.#uiRequest })
   }
 
   #commit(): void {

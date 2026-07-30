@@ -501,6 +501,32 @@ for (const [link, hostReadOnly, expected] of [
   assert.equal(snapshot(client).activeTools.get('tool-1').partialResult, 'partial')
   socket.emitFrame({ t: 'event', event: { type: 'tool_execution_end', toolCallId: 'tool-1', toolName: 'read', result: 'done' } })
   assert.equal(snapshot(client).activeTools.has('tool-1'), false)
+  assert.deepEqual(snapshot(client).completedTools.get('tool-1'), {
+    toolCallId: 'tool-1',
+    toolName: 'read',
+    args: {},
+    intent: 'inspect',
+    partialResult: 'partial',
+    result: 'done',
+    isError: false,
+    startedAt: 0,
+    completedAt: 0
+  })
+
+  socket.emitFrame({ t: 'event', event: { type: 'tool_execution_end', toolCallId: 'event-only', toolName: 'bash', result: 'failed', isError: true } })
+  assert.deepEqual(snapshot(client).completedTools.get('event-only'), {
+    toolCallId: 'event-only', toolName: 'bash', args: {}, result: 'failed', isError: true, startedAt: 0, completedAt: 0
+  })
+
+  for (let index = 0; index < 256; index++) {
+    socket.emitFrame({ t: 'event', event: { type: 'tool_execution_end', toolCallId: `bounded-${index}`, toolName: 'read', result: index } })
+  }
+  assert.equal(snapshot(client).completedTools.size, 256)
+  assert.equal(snapshot(client).completedTools.has('tool-1'), false)
+  assert.equal(snapshot(client).completedTools.has('bounded-255'), true)
+
+  socket.emitFrame(welcome())
+  assert.equal(snapshot(client).completedTools.size, 0, 'a new host handshake must clear completed tools')
 
   const progress = {
     index: 0,
