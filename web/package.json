@@ -12,7 +12,7 @@
     "cap:sync:ios": "npx cap sync ios && node scripts/sync-ios-native.mjs",
     "cap:add:ios": "npx cap add ios",
     "test:ui": "node src/ui-regression.test.mjs",
-    "test:settings": "node src/settings-regression.test.mjs",
+    "test:settings": "node --experimental-strip-types src/helpCommands.test.mjs && node src/settings-regression.test.mjs",
     "test:model": "node src/model-regression.test.mjs",
     "test:events": "node --experimental-strip-types src/opencode-events.test.mjs",
     "test:config": "node --experimental-strip-types src/server-config.test.mjs",

@@ -18,6 +18,7 @@ import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
 import { BACKEND_CLIENTS } from "./backendClient"
 import type { AgentOption, CollabAttachment, CommandInfo, DiffFile, FileEntry, FileStatusEntry, HarnessCapabilities, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
 import { activeSessionDirectory, loadVerifiedCapabilities, resolveInitialBackend, resumeDirectSession } from "./directSession"
+import { connectionHelpCommands } from "./helpCommands"
 import { attachmentFromLink, loadCollabAttachments, saveCollabAttachments } from "./collab/attachments"
 import { CollabClient } from "./collab/client"
 import { adaptCollabSnapshot } from "./collab/adapter"
@@ -2051,6 +2052,7 @@ function App() {
   }, [commands, commandFilter])
   const helpIsBridge = isBridgeBackend(config.backend)
   const helpBackendName = helpIsBridge ? `${backendDisplayName(config.backend)} bridge` : "OpenCode server"
+  const helpCommands = connectionHelpCommands(config.backend)
   const helpPort = config.backend === "opencode" ? 4096 : 4097
   const helpUsername = config.username.trim() || (config.backend === "opencode" ? "opencode" : config.backend)
   const helpHealthPath = helpIsBridge ? "/v1/health" : "/global/health"
@@ -4572,28 +4574,13 @@ function App() {
               <h3>Connect to {helpBackendName}</h3>
               <p>Use the same backend in Settings and on the host. These commands listen on the local network; replace the sample credentials and root before use.</p>
               <div className="code-blocks">
-                {config.backend === "omp" ? (
-                  <>
-                    <h4>OMP bridge (macOS / Linux)</h4>
-                    <pre>npx --yes ./bridge --backend omp --host 0.0.0.0 --port 4097 --username omp --password your-password --root "$PWD"</pre>
-                  </>
-                ) : config.backend === "pi" ? (
-                  <>
-                    <h4>PI bridge (macOS / Linux)</h4>
-                    <pre>npx --yes ./bridge --backend pi --host 0.0.0.0 --port 4097 --username pi --password your-password --root "$PWD"</pre>
-                  </>
-                ) : config.backend === "claude" ? (
-                  <>
-                    <h4>Claude Code bridge (macOS / Linux)</h4>
-                    <pre>npx --yes ./bridge --backend claude --host 0.0.0.0 --port 4097 --username claude --password your-password --root "$PWD"</pre>
-                    <p className="note">Requires <code>claude login</code> or <code>ANTHROPIC_API_KEY</code> on the host machine.</p>
-                  </>
-                ) : (
-                  <>
-                    <h4>OpenCode server (macOS / Linux)</h4>
-                    <pre>OPENCODE_SERVER_USERNAME=opencode OPENCODE_SERVER_PASSWORD=your-password npx -y opencode-ai serve --hostname 0.0.0.0 --port 4096</pre>
-                  </>
-                )}
+                {helpCommands.map(({ platform, command }) => (
+                  <Fragment key={platform}>
+                    <h4>{helpBackendName} ({platform})</h4>
+                    <pre>{command}</pre>
+                  </Fragment>
+                ))}
+                {config.backend === "claude" && <p className="note">Requires <code>claude login</code> or <code>ANTHROPIC_API_KEY</code> on the host machine.</p>}
               </div>
 
               <h4>Same network (LAN)</h4>
