@@ -250,13 +250,13 @@ const liveCompleted = adaptCollabSnapshot(snapshot({
     toolCallId: 'live-call', toolName: 'bash', args: { command: 'echo active' }, partialResult: 'active output', startedAt: 1_785_240_007_000
   }]]),
   completedTools: new Map([['live-call', {
-    toolCallId: 'live-call', toolName: 'bash', args: { command: 'echo live' },
+    toolCallId: 'live-call', toolName: 'bash', args: null,
     result: 'live result', isError: false, startedAt: 1_785_240_008_000, completedAt: 1_785_240_009_000
   }]])
 }))
 assert.deepEqual(liveCompleted.messages[0].parts[0].state, {
   status: 'completed',
-  input: { command: 'echo live' },
+  input: { value: null },
   output: 'live result',
   time: { start: 1_785_240_008_000, end: 1_785_240_009_000 }
 })

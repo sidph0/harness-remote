@@ -71,7 +71,7 @@ function messageParts(
     const completed = completedTools.get(part.id)
     const active = activeTools.get(part.id)
     const event = completed ?? active
-    const input = event?.args ?? part.arguments
+    const input = event ? event.args : part.arguments
     const output = result
       ? text(result.message.content)
       : completed
