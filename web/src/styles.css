@@ -1078,6 +1078,39 @@ p {
   background: var(--surface-strong);
 }
 
+.message-action-details,
+.message-reasoning-details,
+.message-tool-details {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.message-action-details[hidden],
+.message-reasoning-details[hidden],
+.message-tool-details[hidden] {
+  display: none;
+}
+
+.message-action-details pre,
+.message-reasoning-details pre,
+.message-tool-details pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 520px) {
+  .message-reasoning-summary,
+  .message-action-summary,
+  .message-tool-summary {
+    padding-inline: var(--space-2);
+    font-size: 0.78rem;
+  }
+}
+
 .message-reasoning-text {
   margin: 0;
   white-space: pre-wrap;

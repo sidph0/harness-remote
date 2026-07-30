@@ -21,6 +21,7 @@ import { activeSessionDirectory, loadVerifiedCapabilities, resolveInitialBackend
 import { attachmentFromLink, loadCollabAttachments, saveCollabAttachments } from "./collab/attachments"
 import { CollabClient } from "./collab/client"
 import { adaptCollabSnapshot } from "./collab/adapter"
+import { collabSessionView, mergeCollabSessionViews } from "./collab/sessionView"
 import {
   SettingsIcon,
   FolderIcon,
@@ -903,19 +904,26 @@ function QuestionCard({
   )
 }
 
+function activityIsLive(part: MessagePart, collabLive: boolean, liveReasoningID?: string): boolean {
+  return collabLive && (part.state?.status === "running" || part.id === liveReasoningID)
+}
+
 function ToolPartView({
   part,
   directory,
-  timestamp,
+  collabLive,
   t
 }: {
   part: MessagePart
   directory: string | undefined
-  timestamp?: string
+  collabLive: boolean
   t: Translator
 }) {
-  const [open, setOpen] = useState(false)
   const status = part.state?.status || "pending"
+  const live = activityIsLive(part, collabLive)
+  const [open, setOpen] = useState(live)
+  useEffect(() => setOpen(live), [live])
+  const detailsID = `message-tool-details-${part.id}`
   const command = toolCommandLabel(part)
   const { label, diff } = describeToolAction(part, directory, t)
   const tool = (part.tool || "").toLowerCase()
@@ -930,7 +938,13 @@ function ToolPartView({
   const questions = tool === "question" ? parseQuestions(input.questions) : null
   return (
     <>
-      <button type="button" className={`message-tool-summary message-tool-${status}`} onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className={`message-tool-summary message-tool-${status}`}
+        aria-expanded={open}
+        aria-controls={detailsID}
+        onClick={() => setOpen((current) => !current)}
+      >
         <span className="message-tool-label">{label}</span>
         <span className="message-tool-meta">
           {diff && (diff.additions > 0 || diff.deletions > 0) && (
@@ -951,44 +965,54 @@ function ToolPartView({
           )}
         </span>
       </button>
-
-      {open && (
-        <Modal title={truncateForTitle(label)} timestamp={timestamp} onClose={() => setOpen(false)} t={t}>
-          {todos ? (
-            <TodoListView items={todos} />
-          ) : questions ? (
-            <QuestionListView questions={questions} answers={part.state?.metadata?.answers} />
-          ) : (
-            <>
-              <pre className="message-tool-command">{command}</pre>
-              {patch ? (
-                <DiffLines patch={patch} />
-              ) : (
-                part.state?.output && <pre className="message-tool-output">{part.state.output}</pre>
-              )}
-            </>
-          )}
-          {part.state?.error && <pre className="message-tool-output message-tool-error">{part.state.error}</pre>}
-        </Modal>
-      )}
+      <div id={detailsID} className="message-tool-details" hidden={!open}>
+        {todos ? (
+          <TodoListView items={todos} />
+        ) : questions ? (
+          <QuestionListView questions={questions} answers={part.state?.metadata?.answers} />
+        ) : (
+          <>
+            <pre className="message-tool-command">{command}</pre>
+            {patch ? <DiffLines patch={patch} /> : part.state?.output && <pre className="message-tool-output">{part.state.output}</pre>}
+          </>
+        )}
+        {part.state?.error && <pre className="message-tool-output message-tool-error">{part.state.error}</pre>}
+      </div>
     </>
   )
 }
 
-function ReasoningPartView({ part, timestamp, t }: { part: MessagePart; timestamp?: string; t: Translator }) {
-  const [open, setOpen] = useState(false)
+function ReasoningPartView({
+  part,
+  collabLive,
+  liveReasoningID,
+  t,
+}: {
+  part: MessagePart
+  collabLive: boolean
+  liveReasoningID?: string
+  t: Translator
+}) {
+  const live = activityIsLive(part, collabLive, liveReasoningID)
+  const [open, setOpen] = useState(live)
+  useEffect(() => setOpen(live), [live])
   if (!part.text) return null
   const label = reasoningLabel([part], t)
+  const detailsID = `message-reasoning-details-${part.id}`
   return (
     <>
-      <button type="button" className="message-reasoning-summary" onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className="message-reasoning-summary"
+        aria-expanded={open}
+        aria-controls={detailsID}
+        onClick={() => setOpen((current) => !current)}
+      >
         {label}
       </button>
-      {open && (
-        <Modal title={label} timestamp={timestamp} onClose={() => setOpen(false)} t={t}>
-          <pre className="message-reasoning-text">{part.text}</pre>
-        </Modal>
-      )}
+      <div id={detailsID} className="message-reasoning-details" hidden={!open}>
+        <pre className="message-reasoning-text">{part.text}</pre>
+      </div>
     </>
   )
 }
@@ -999,6 +1023,8 @@ function MessagePartView({
   sessionID,
   directory,
   timestamp,
+  collabLive,
+  liveReasoningID,
   t
 }: {
   part: MessagePart
@@ -1006,6 +1032,8 @@ function MessagePartView({
   sessionID: string
   directory?: string
   timestamp?: string
+  collabLive: boolean
+  liveReasoningID?: string
   t: Translator
 }) {
   if (part.type === "text") {
@@ -1021,11 +1049,11 @@ function MessagePartView({
     return <p className="collab-prompt-source">{t('collab.promptSource')}: {part.text}</p>
   }
   if (part.type === "reasoning") {
-    return <ReasoningPartView part={part} timestamp={timestamp} t={t} />
+    return <ReasoningPartView part={part} collabLive={collabLive} liveReasoningID={liveReasoningID} t={t} />
   }
 
   if (part.type === "tool") {
-    return <ToolPartView part={part} directory={directory} timestamp={timestamp} t={t} />
+    return <ToolPartView part={part} directory={directory} collabLive={collabLive} t={t} />
   }
 
   if (part.type === "patch") {
@@ -1184,6 +1212,8 @@ function ActionGroupView({
   sessionID,
   directory,
   timestamp,
+  collabLive,
+  liveReasoningID,
   t
 }: {
   parts: MessagePart[]
@@ -1191,27 +1221,42 @@ function ActionGroupView({
   sessionID: string
   directory?: string
   timestamp?: string
+  collabLive: boolean
+  liveReasoningID?: string
   t: Translator
 }) {
-  const [open, setOpen] = useState(false)
+  const live = parts.some((part) => activityIsLive(part, collabLive, liveReasoningID))
+  const [open, setOpen] = useState(live)
+  useEffect(() => setOpen(live), [live])
+  const detailsID = `message-action-details-${parts[0].id}`
   return (
     <>
-      <button type="button" className="message-action-summary" onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className="message-action-summary"
+        aria-expanded={open}
+        aria-controls={detailsID}
+        onClick={() => setOpen((current) => !current)}
+      >
         <span>{summarizeActionGroup(parts, t)}</span>
       </button>
-
-      {open && (
-        <Modal title={summarizeActionGroup(parts, t)} timestamp={timestamp} onClose={() => setOpen(false)} t={t}>
-          <div className="message-action-details">
-            {parts.map((part, index) => (
-              <Fragment key={part.id}>
-                {index > 0 && <hr className="message-action-divider" />}
-                <MessagePartView part={part} config={config} sessionID={sessionID} directory={directory} timestamp={timestamp} t={t} />
-              </Fragment>
-            ))}
-          </div>
-        </Modal>
-      )}
+      <div id={detailsID} className="message-action-details" hidden={!open}>
+        {parts.map((part, index) => (
+          <Fragment key={part.id}>
+            {index > 0 && <hr className="message-action-divider" />}
+            <MessagePartView
+              part={part}
+              config={config}
+              sessionID={sessionID}
+              directory={directory}
+              timestamp={timestamp}
+              collabLive={collabLive}
+              liveReasoningID={liveReasoningID}
+              t={t}
+            />
+          </Fragment>
+        ))}
+      </div>
     </>
   )
 }
@@ -1506,6 +1551,8 @@ function ConversationRunView({
   sessionID,
   config,
   directory,
+  collabLive,
+  liveReasoningID,
   t
 }: {
   items: TimelineItem[]
@@ -1513,6 +1560,8 @@ function ConversationRunView({
   sessionID: string
   config: ServerConfig
   directory: string | undefined
+  collabLive: boolean
+  liveReasoningID?: string
   t: Translator
 }) {
   const fallback = [...messagesByID.values()].pop()
@@ -1531,6 +1580,8 @@ function ConversationRunView({
             sessionID={sessionID}
             directory={directory}
             timestamp={timestampFor(item.parts[item.parts.length - 1])}
+            collabLive={collabLive}
+            liveReasoningID={liveReasoningID}
             t={t}
           />
         ) : (
@@ -1541,6 +1592,8 @@ function ConversationRunView({
             sessionID={sessionID}
             directory={directory}
             timestamp={timestampFor(item.part)}
+            collabLive={collabLive}
+            liveReasoningID={liveReasoningID}
             t={t}
           />
         )
@@ -1556,11 +1609,15 @@ const MessageArticle = memo(function MessageArticle({
   message,
   config,
   directory,
+  collabLive,
+  liveReasoningID,
   t
 }: {
   message: MessageEnvelope & { text: string }
   config: ServerConfig
   directory: string | undefined
+  collabLive: boolean
+  liveReasoningID?: string
   t: Translator
 }) {
   return (
@@ -1574,6 +1631,8 @@ const MessageArticle = memo(function MessageArticle({
             sessionID={message.info.sessionID}
             directory={directory}
             timestamp={formatTime(message.info.time.created)}
+            collabLive={collabLive}
+            liveReasoningID={liveReasoningID}
             t={t}
           />
         ) : (
@@ -1584,6 +1643,8 @@ const MessageArticle = memo(function MessageArticle({
             sessionID={message.info.sessionID}
             directory={directory}
             timestamp={formatTime(message.info.time.created)}
+            collabLive={collabLive}
+            liveReasoningID={liveReasoningID}
             t={t}
           />
         )
@@ -1605,6 +1666,8 @@ const MessagesPane = memo(function MessagesPane({
   pendingQuestions,
   config,
   directory,
+  collabLive,
+  liveReasoningID,
   t,
   messagesRef,
   messagesEndRef,
@@ -1623,6 +1686,8 @@ const MessagesPane = memo(function MessagesPane({
   pendingQuestions: QuestionRequest[]
   config: ServerConfig
   directory: string | undefined
+  collabLive: boolean
+  liveReasoningID?: string
   t: Translator
   messagesRef: RefObject<HTMLDivElement>
   messagesEndRef: RefObject<HTMLDivElement>
@@ -1658,7 +1723,15 @@ const MessagesPane = memo(function MessagesPane({
           <>
             {timelineGroups.map((group) =>
               group.kind === "message" ? (
-                <MessageArticle key={group.message.info.id} message={group.message} config={config} directory={directory} t={t} />
+                <MessageArticle
+                  key={group.message.info.id}
+                  message={group.message}
+                  config={config}
+                  directory={directory}
+                  collabLive={collabLive}
+                  liveReasoningID={liveReasoningID}
+                  t={t}
+                />
               ) : (
                 <ConversationRunView
                   key={group.key}
@@ -1667,6 +1740,8 @@ const MessagesPane = memo(function MessagesPane({
                   sessionID={group.sessionID}
                   config={config}
                   directory={directory}
+                  collabLive={collabLive}
+                  liveReasoningID={liveReasoningID}
                   t={t}
                 />
               )
@@ -1909,6 +1984,9 @@ function App() {
   const selectedCollabData = selectedCollabEntry
     ? adaptCollabSnapshot(selectedCollabEntry.client.getSnapshot(), { sendUiResponse: (requestID, value) => selectedCollabEntry.client.sendUiResponse(requestID, value) })
     : null
+  const selectedLiveReasoningID = selectedCollabSnapshot?.phase === "live"
+    ? selectedCollabData?.messages.find((message) => message.info.id.startsWith("collab-stream-"))?.parts.find((part) => part.type === "reasoning")?.id
+    : undefined
   const selectedCollabRequest = selectedCollabData?.uiRequest ?? null
   const selectedCollabNotice = selectedCollabSnapshot?.notices[selectedCollabSnapshot.notices.length - 1] ?? null
   const selectedCollabPhaseText = selectedCollabSnapshot?.phase === "waiting" ? t('collab.phase.waiting')
@@ -2061,9 +2139,7 @@ function App() {
       : modelLoadError ? t('detail.modelUnavailable') : t('detail.modelLoading'))
 
   function mergeCollabSessions(direct: SessionView[]): SessionView[] {
-    const collabIDs = collabClientsRef.current
-    return [...direct.filter((session) => !collabIDs.has(session.id)), ...collabViewsRef.current.values()]
-      .sort((a, b) => b.updated - a.updated)
+    return mergeCollabSessionViews(direct, collabAttachmentsRef.current, collabViewsRef.current)
   }
 
   function applyCollabDetail(id: string) {
@@ -2087,18 +2163,18 @@ function App() {
 
   function connectCollabAttachment(attachment: CollabAttachment) {
     const id = `collab:${attachment.id}`
+    collabViewsRef.current.set(id, collabSessionView(attachment, collabViewsRef.current.get(id)))
+    setSessions((current) => mergeCollabSessions(current))
     if (collabClientsRef.current.has(id)) return
+
     const client = new CollabClient(attachment.link, attachment.name)
     const update = () => {
       const snapshot = client.getSnapshot()
       const data = adaptCollabSnapshot(snapshot, { sendUiResponse: (requestID, value) => client.sendUiResponse(requestID, value) })
-      const adapted = data.session ? toSessionView(data.session, data.status) : null
+      const adapted = data.session ? toSessionView(data.session, data.status) : undefined
       collabViewsRef.current.set(id, {
-        ...(adapted ?? { title: attachment.name, directory: "OMP Collab", updated: Date.now(), files: 0, additions: 0, deletions: 0 }),
-        id,
-        title: adapted?.title || attachment.name,
+        ...collabSessionView(attachment, collabViewsRef.current.get(id), adapted),
         status: snapshot.phase === "live" ? (adapted?.status ?? "idle") : snapshot.phase,
-        external: true
       })
       setSessions((current) => mergeCollabSessions(current))
       if (selectedSessionRef.current?.id === id) applyCollabDetail(id)
@@ -2940,7 +3016,6 @@ function App() {
         client.close()
       }
       collabClientsRef.current.clear()
-      collabViewsRef.current.clear()
     }
   }, [isNativeIOS])
 
@@ -4099,6 +4174,8 @@ function App() {
             pendingQuestions={pendingQuestions}
             config={config}
             directory={selectedSession?.directory}
+            collabLive={selectedCollabSnapshot?.phase === "live"}
+            liveReasoningID={selectedLiveReasoningID}
             t={t}
             jumpAffordances={jumpAffordances}
             onJumpToTop={handleJumpToTop}
