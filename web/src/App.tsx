@@ -4039,7 +4039,7 @@ function App() {
             <div className="todo-box">
               <div className="todo-header-row">
                 <h3>
-                  {!isNativeIOS && <span aria-hidden="true">📋</span>}
+                  {!isNativeIOS && <span aria-hidden="true" style={{ marginRight: 'var(--space-2)' }}>📋</span>}
                   {t('todo.title')}
                 </h3>
                 <button type="button" className="todo-toggle-btn" onClick={() => setTodosExpanded((value) => !value)} aria-expanded={todosExpanded} aria-controls="todo-items-content">
