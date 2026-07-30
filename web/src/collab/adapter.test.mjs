@@ -340,8 +340,8 @@ assert.equal(eventOnlyJson.includes('secret-complete-bearer'), false)
 assert.equal(eventOnlyJson.includes('secret-complete-frame'), false)
 
 const orderingEntries = [
-  { type: 'message', id: 'ordering-before', timestamp: '2026-07-28T12:00:10.000Z', message: { role: 'user', content: 'before', timestamp: 1_785_240_010_000 } },
-  { type: 'message', id: 'ordering-after', timestamp: '2026-07-28T12:00:20.000Z', message: { role: 'user', content: 'after', timestamp: 1_785_240_020_000 } },
+  { type: 'message', id: 'collab-stream-durable-user', timestamp: '2026-07-28T12:00:10.000Z', message: { role: 'user', content: 'before', timestamp: 1_785_240_010_000 } },
+  { type: 'message', id: 'collab-tool-durable-assistant', timestamp: '2026-07-28T12:00:20.000Z', message: { role: 'assistant', content: 'durable reply', timestamp: 1_785_240_020_000 } },
 ]
 const orderingStream = { ...streamingMessage, content: [{ type: 'thinking', thinking: 'resumed reasoning' }], timestamp: 1_785_240_030_000 }
 const orderingTool = new Map([['ordering-tool', {
@@ -355,8 +355,8 @@ const streamAfterTool = adaptCollabSnapshot(snapshot({
   toolSequences: new Map([['ordering-tool', 3]]),
 }))
 assert.deepEqual(streamAfterTool.messages.map(message => message.info.id), [
-  'ordering-before', 'collab-tool-ordering-tool', 'ordering-after', 'collab-stream-1785240030000',
-])
+  'collab-stream-durable-user', 'collab-tool-ordering-tool', 'collab-tool-durable-assistant', 'collab-stream-1785240030000',
+], 'durable prefix-colliding entries stay fixed when the stream follows the tool')
 const toolAfterStream = adaptCollabSnapshot(snapshot({
   entries: orderingEntries,
   stream: orderingStream,
@@ -365,8 +365,8 @@ const toolAfterStream = adaptCollabSnapshot(snapshot({
   toolSequences: new Map([['ordering-tool', 5]]),
 }))
 assert.deepEqual(toolAfterStream.messages.map(message => message.info.id), [
-  'ordering-before', 'collab-stream-1785240030000', 'ordering-after', 'collab-tool-ordering-tool',
-])
+  'collab-stream-durable-user', 'collab-stream-1785240030000', 'collab-tool-durable-assistant', 'collab-tool-ordering-tool',
+], 'durable prefix-colliding entries stay fixed when the tool follows the stream')
 
 const eventWithoutHeader = adaptCollabSnapshot(snapshot({
   header: null,

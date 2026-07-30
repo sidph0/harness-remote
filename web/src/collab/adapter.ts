@@ -161,6 +161,7 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
 
   const messages: MessageEnvelope[] = []
   const seenTools = new Set<string>()
+  const activitySequences = new Map<MessageEnvelope, number>()
   for (const entry of snapshot.entries) {
     if (entry.type === "message" && typeof entry.id === "string" && (entry.message?.role === "user" || entry.message?.role === "assistant")) {
       const created = timestamp(entry.message.timestamp, entry.timestamp)
@@ -189,10 +190,12 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
       entry.type === "message" && entry.message?.role === "assistant" && timestamp(entry.message.timestamp, entry.timestamp) === streamCreated)
     if (!committed) {
       const id = `collab-stream-${streamCreated}`
-      messages.push({
+      const streamMessage: MessageEnvelope = {
         info: { id, role: "assistant", sessionID, time: { created: streamCreated } },
         parts: messageParts(id, snapshot.stream, streamCreated, results, snapshot.activeTools, snapshot.completedTools, seenTools)
-      })
+      }
+      activitySequences.set(streamMessage, snapshot.streamSequence)
+      messages.push(streamMessage)
     }
   }
 
@@ -200,18 +203,22 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
   for (const tool of snapshot.completedTools.values()) {
     if (seenTools.has(tool.toolCallId)) continue
     const id = `collab-tool-${tool.toolCallId}`
-    synthetic.push({
+    const message: MessageEnvelope = {
       info: { id, role: "assistant", sessionID, time: { created: tool.startedAt, completed: tool.completedAt } },
       parts: messageParts(id, { content: [{ type: "toolCall", id: tool.toolCallId, name: tool.toolName, arguments: tool.args }] }, tool.startedAt, results, snapshot.activeTools, snapshot.completedTools)
-    })
+    }
+    activitySequences.set(message, snapshot.toolSequences.get(tool.toolCallId) ?? 0)
+    synthetic.push(message)
   }
   for (const tool of snapshot.activeTools.values()) {
     if (seenTools.has(tool.toolCallId) || snapshot.completedTools.has(tool.toolCallId)) continue
     const id = `collab-tool-${tool.toolCallId}`
-    synthetic.push({
+    const message: MessageEnvelope = {
       info: { id, role: "assistant", sessionID, time: { created: tool.startedAt } },
       parts: messageParts(id, { content: [{ type: "toolCall", id: tool.toolCallId, name: tool.toolName, arguments: tool.args }] }, tool.startedAt, results, snapshot.activeTools, snapshot.completedTools)
-    })
+    }
+    activitySequences.set(message, snapshot.toolSequences.get(tool.toolCallId) ?? 0)
+    synthetic.push(message)
   }
   synthetic.sort((a, b) => a.info.time.created - b.info.time.created || a.info.id.localeCompare(b.info.id))
   for (const message of synthetic) {
@@ -221,17 +228,11 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
 
   const activitySlots: number[] = []
   for (let index = 0; index < messages.length; index += 1) {
-    if (messages[index].info.id.startsWith("collab-stream-") || messages[index].info.id.startsWith("collab-tool-")) activitySlots.push(index)
+    if (activitySequences.has(messages[index])) activitySlots.push(index)
   }
-  const orderedActivity = activitySlots.map((index) => messages[index]).sort((a, b) => {
-    const aSequence = a.info.id.startsWith("collab-stream-")
-      ? snapshot.streamSequence
-      : snapshot.toolSequences.get(a.info.id.slice("collab-tool-".length)) ?? 0
-    const bSequence = b.info.id.startsWith("collab-stream-")
-      ? snapshot.streamSequence
-      : snapshot.toolSequences.get(b.info.id.slice("collab-tool-".length)) ?? 0
-    return aSequence - bSequence
-  })
+  const orderedActivity = activitySlots
+    .map((index) => messages[index])
+    .sort((a, b) => activitySequences.get(a)! - activitySequences.get(b)!)
   for (let index = 0; index < activitySlots.length; index += 1) messages[activitySlots[index]] = orderedActivity[index]
 
   return {
