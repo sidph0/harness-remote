@@ -242,7 +242,6 @@ function capitalizeFirst(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text
 }
 
-const MODAL_TITLE_MAX_LENGTH = 80
 /**
  * How long the open session may go without an SSE event before the poll treats the stream as not
  * covering it. Comfortably above opencode's 10s server heartbeat so a merely idle session isn't
@@ -250,10 +249,6 @@ const MODAL_TITLE_MAX_LENGTH = 80
  */
 const SESSION_STREAM_QUIET_MS = 12_000
 
-function truncateForTitle(text: string, maxLength: number = MODAL_TITLE_MAX_LENGTH): string {
-  const singleLine = text.replace(/\s+/g, " ").trim()
-  return singleLine.length > maxLength ? `${singleLine.slice(0, maxLength - 1)}…` : singleLine
-}
 
 function toolCommandLabel(part: MessagePart): string {
   const input = part.state?.input
