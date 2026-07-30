@@ -153,9 +153,8 @@ type TranslationKey =
   | 'session.renamePlaceholder'
   | 'session.renameConfirm'
   | 'help.title'
-  | 'help.overview'
-  | 'help.server'
-  | 'help.network'
+  | 'help.quickStart'
+  | 'help.connections'
   | 'help.troubleshooting'
   | 'help.commands'
   | 'action.close'
@@ -397,9 +396,8 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'session.renamePlaceholder': 'Enter new name...',
     'session.renameConfirm': 'Rename',
     'help.title': 'Help & Documentation',
-    'help.overview': 'Overview',
-    'help.server': 'Server',
-    'help.network': 'Network',
+    'help.quickStart': 'Quick Start',
+    'help.connections': 'Connections',
     'help.troubleshooting': 'Troubleshooting',
     'help.commands': 'Commands',
     'action.close': 'Close',
@@ -640,9 +638,8 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'session.renamePlaceholder': 'Inserisci nuovo nome...',
     'session.renameConfirm': 'Rinomina',
     'help.title': 'Aiuto e documentazione',
-    'help.overview': 'Panoramica',
-    'help.server': 'Server',
-    'help.network': 'Rete',
+    'help.quickStart': 'Guida rapida',
+    'help.connections': 'Connessioni',
     'help.troubleshooting': 'Risoluzione problemi',
     'help.commands': 'Comandi',
     'action.close': 'Chiudi',
@@ -883,9 +880,8 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'session.renamePlaceholder': '輸入新名稱...',
     'session.renameConfirm': '重新命名',
     'help.title': '說明與文件',
-    'help.overview': '總覽',
-    'help.server': '伺服器',
-    'help.network': '網路',
+    'help.quickStart': '快速開始',
+    'help.connections': '連線',
     'help.troubleshooting': '疑難排解',
     'help.commands': '命令',
     'action.close': '關閉',

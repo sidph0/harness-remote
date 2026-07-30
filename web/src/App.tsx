@@ -1726,8 +1726,8 @@ function App() {
   const [modelLoadError, setModelLoadError] = useState<string | null>(null)
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(() => readStoredModel(config.backend))
   const [modelQuery, setModelQuery] = useState("")
-  const [helpPage, setHelpPage] = useState<"overview" | "server" | "network" | "troubleshooting" | "commands">(
-    "overview"
+  const [helpPage, setHelpPage] = useState<"quick-start" | "connections" | "troubleshooting" | "commands">(
+    "quick-start"
   )
   const [view, setView] = useState<"settings" | "sessions" | "detail" | "help">(() => {
     return config.host && config.port > 0 ? "sessions" : "settings"
@@ -1977,6 +1977,11 @@ function App() {
     if (commandFilter === "skill") return commands.filter((command) => command.source === "skill")
     return commands
   }, [commands, commandFilter])
+  const helpIsBridge = isBridgeBackend(config.backend)
+  const helpBackendName = helpIsBridge ? `${backendDisplayName(config.backend)} bridge` : "OpenCode server"
+  const helpPort = config.backend === "opencode" ? 4096 : 4097
+  const helpUsername = config.username.trim() || (config.backend === "opencode" ? "opencode" : config.backend)
+  const helpHealthPath = helpIsBridge ? "/v1/health" : "/global/health"
   const selectedNewSessionDirectory = normalizeDirectory(newSessionDirectory)
 
   const renderedMessages = useMemo(() => {
@@ -4428,40 +4433,32 @@ function App() {
         <section className="panel help fade-in">
           <h2>{t('help.title')}</h2>
           <div className="help-tabs" role="tablist">
-            <button 
-              className={helpPage === "overview" ? "active" : ""} 
-              onClick={() => setHelpPage("overview")}
+            <button
+              className={helpPage === "quick-start" ? "active" : ""}
+              onClick={() => setHelpPage("quick-start")}
               role="tab"
-              aria-selected={helpPage === "overview"}
+              aria-selected={helpPage === "quick-start"}
             >
-              {t('help.overview')}
+              {t('help.quickStart')}
             </button>
-            <button 
-              className={helpPage === "server" ? "active" : ""} 
-              onClick={() => setHelpPage("server")}
+            <button
+              className={helpPage === "connections" ? "active" : ""}
+              onClick={() => setHelpPage("connections")}
               role="tab"
-              aria-selected={helpPage === "server"}
+              aria-selected={helpPage === "connections"}
             >
-              {t('help.server')}
+              {t('help.connections')}
             </button>
-            <button 
-              className={helpPage === "network" ? "active" : ""} 
-              onClick={() => setHelpPage("network")}
-              role="tab"
-              aria-selected={helpPage === "network"}
-            >
-              {t('help.network')}
-            </button>
-            <button 
-              className={helpPage === "troubleshooting" ? "active" : ""} 
+            <button
+              className={helpPage === "troubleshooting" ? "active" : ""}
               onClick={() => setHelpPage("troubleshooting")}
               role="tab"
               aria-selected={helpPage === "troubleshooting"}
             >
               {t('help.troubleshooting')}
             </button>
-            <button 
-              className={helpPage === "commands" ? "active" : ""} 
+            <button
+              className={helpPage === "commands" ? "active" : ""}
               onClick={() => { setCommandFilter("all"); setHelpPage("commands") }}
               role="tab"
               aria-selected={helpPage === "commands"}
@@ -4470,62 +4467,39 @@ function App() {
             </button>
           </div>
 
-          {helpPage === "overview" && (
+          {helpPage === "quick-start" && (
             <div className="help-content fade-in">
-              <h3>Getting Started</h3>
-              <ul>
-                <li><strong>Configure Server:</strong> Use Settings to enter host, port, username and password</li>
-                <li><strong>Test Connection:</strong> Press Test to validate server connectivity</li>
-                <li><strong>Configuration:</strong> Changes are saved automatically and applied after you pause typing.</li>
-                {/* Told in terms of what is actually on screen: the same two steps are a tab and a
-                    view on a phone, and two panes side by side on a desktop. */}
-                <li><strong>Browse Sessions:</strong> {isDesktop
-                  ? "Pick a session from the sidebar on the left"
-                  : "View and manage sessions from the Sessions tab"}</li>
-                <li><strong>Interact:</strong> {isDesktop
-                  ? "Read and reply in the conversation beside it"
-                  : "Open a session and chat in the Detail view"}</li>
-                <li><strong>Quick Input:</strong> Press Enter to send, Shift+Enter for new lines</li>
-                <li><strong>Slash Commands:</strong> Text starting with <code>/</code> is sent as a command</li>
-              </ul>
+              <h3>Start here</h3>
+              <ol>
+                <li><strong>Connect:</strong> Open Settings, enter the host, port, username, and password, then run Test Connection. Changes save automatically.</li>
+                <li><strong>Choose work:</strong> Open Sessions, refresh or search, then select a session. Create a session when {helpBackendName} supports it.</li>
+                <li><strong>Manage a session:</strong> {isNativeIOS ? "Use More for the rename, delete, or detach actions this session supports." : "Use the session row actions to rename, delete, or detach when supported."}</li>
+                <li><strong>Work:</strong> Open the conversation, choose AI or session details when needed, and send a prompt. Enter sends; Shift+Enter adds a line.</li>
+                <li><strong>Share desktop OMP:</strong> For an arbitrary desktop OMP session, run <code>/collab</code> there and attach its bearer link in Harness Remote.</li>
+              </ol>
 
-              {/* Window width alone picks the layout, so the one thing worth stating is where the
-                  boundary is: otherwise a resized window looks like the app lost its sidebar. */}
               {!isNativeIOS && <>
-              <h3>Desktop Layout</h3>
-              <p>
-                A window at least {DESKTOP_MIN_WIDTH}px wide shows the sessions sidebar and the
-                conversation side by side.{isDesktop
-                  ? " Narrow it below that and the single-view mobile layout comes back."
-                  : " This window is narrower than that, which is why you are seeing one view at a time."}
-              </p>
-              <ul>
-                <li><strong>Resize:</strong> Drag the sidebar's outer edge, the divider between the panes, or the conversation's outer edge. Both widths are remembered.</li>
-                <li><strong>Rename or delete:</strong> Hover a sidebar row to reveal its icons.</li>
-                <li><strong>Working sessions:</strong> A moving accent bar down the left of a row replaces the status pill.</li>
-                <li><strong>Settings and Help:</strong> Open over the conversation, so it stays where you left it.</li>
-              </ul>
+                <h3>Desktop Layout</h3>
+                <p>
+                  A window at least {DESKTOP_MIN_WIDTH}px wide shows the sessions sidebar and the
+                  conversation side by side.{isDesktop
+                    ? " Narrow it below that and the single-view mobile layout comes back."
+                    : " This window is narrower than that, which is why you are seeing one view at a time."}
+                </p>
+                <ul>
+                  <li><strong>Resize:</strong> Drag the sidebar's outer edge, the divider between the panes, or the conversation's outer edge. Both widths are remembered.</li>
+                  <li><strong>Rename or delete:</strong> Hover a sidebar row to reveal its icons.</li>
+                  <li><strong>Working sessions:</strong> A moving accent bar down the left of a row replaces the status pill.</li>
+                  <li><strong>Settings and Help:</strong> Open over the conversation, so it stays where you left it.</li>
+                </ul>
               </>}
-
-              <h3>Key Features</h3>
-              <ul>
-                <li>{isNativeIOS ? 'Real-time session monitoring' : '🔄 Real-time session monitoring'}</li>
-                <li>{isNativeIOS ? 'Interactive chat interface' : '💬 Interactive chat interface'}</li>
-                <li>{isNativeIOS ? 'Todo tracking display' : '📋 Todo tracking display'}</li>
-                <li>{isNativeIOS ? 'Instant session control' : '⚡ Instant session control'}</li>
-                <li>{isNativeIOS ? 'Completion notifications' : '🔔 Completion notifications'}</li>
-                <li>{isNativeIOS ? 'Jump to either end of a long conversation' : '↕️ Jump to either end of a long conversation'}</li>
-              </ul>
             </div>
           )}
 
-          {helpPage === "server" && (
+          {helpPage === "connections" && (
             <div className="help-content fade-in">
-              <h3>{isBridgeBackend(config.backend) ? `${backendDisplayName(config.backend)} bridge` : "OpenCode server"}</h3>
-              <p>
-                This page keeps setup brief. Full, versioned backend guides live in the Harness Remote repository so new
-                backends do not make the app help unwieldy.
-              </p>
+              <h3>Connect to {helpBackendName}</h3>
+              <p>Use the same backend in Settings and on the host. These commands listen on the local network; replace the sample credentials and root before use.</p>
               <div className="code-blocks">
                 {config.backend === "omp" ? (
                   <>
@@ -4550,84 +4524,82 @@ function App() {
                   </>
                 )}
               </div>
+
+              <h4>Same network (LAN)</h4>
+              <p>Enter the host computer's LAN address and port <code>{helpPort}</code> in Settings. LAN access requires a reachable listener such as <code>0.0.0.0</code> and a firewall rule limited to your trusted network.</p>
+
+              <h4>Remote access with Tailscale Serve</h4>
+              <p>Keep {helpBackendName} private and let Tailscale Serve provide HTTPS:</p>
+              <pre>tailscale serve --bg http://127.0.0.1:{helpPort}</pre>
+              <p>Use the HTTPS MagicDNS hostname printed by <code>tailscale serve status</code> in Settings with port <code>443</code>. Both devices must be signed into the same tailnet.</p>
+              {isNativeIOS && <p className="note">This is the recommended native iOS path. Direct <code>100.x.x.x</code> HTTP may work in Safari while native networking rejects it.</p>}
+
+              {config.backend === "omp" && <>
+                <h4>Share an existing desktop OMP session</h4>
+                <p>Run <code>/collab</code> in that desktop session, then use Attach OMP Collab in Harness Remote. Direct bridge sessions and Collab cards are separate. Treat the bearer link like a password; native iOS stores attached links in Keychain.</p>
+              </>}
+
+              <h4>Security requirements</h4>
+              <ul>
+                <li>Keep Basic Auth enabled and use a strong, unique password.</li>
+                {helpIsBridge && <li>Limit available folders with <code>--root</code>.</li>}
+                <li>Allow only exact browser origins. The native bridge must allow <code>capacitor://localhost</code> for authenticated live updates.</li>
+                {config.backend === "omp" && <li>Use <code>wss://</code> for any non-local custom Collab relay.</li>}
+                <li>Never expose the backend directly to the public internet.</li>
+              </ul>
               <p>
-                <a
-                  href={`https://github.com/giuliastro/harness-remote#${config.backend === "opencode" ? "opencode-server-setup" : config.backend === "pi" ? "pi-bridge-setup" : config.backend === "claude" ? "claude-code-bridge-setup" : "oh-my-pi-bridge-setup"}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open the complete {isBridgeBackend(config.backend) ? `${backendDisplayName(config.backend)} bridge` : "OpenCode server"} guide in the repository
+                <a href="https://github.com/sidph0/harness-remote" target="_blank" rel="noreferrer">
+                  Open the complete Harness Remote setup guide
                 </a>
               </p>
             </div>
           )}
 
-          {helpPage === "network" && (
-            <div className="help-content fade-in">
-              <h3>Network Configuration</h3>
-              
-              <div className="network-modes">
-                <h4>{isNativeIOS ? 'LAN Mode (Recommended)' : '🌐 LAN Mode (Recommended)'}</h4>
-                <p>Use your PC's local IP address for devices on the same network:</p>
-                <pre>Example: 192.168.1.61</pre>
-                
-                <h4>{isNativeIOS ? 'WAN Mode (Advanced)' : '🌍 WAN Mode (Advanced)'}</h4>
-                <ul>
-                  <li>Configure NAT/port forwarding on your router</li>
-                  <li>Set up a VPN for secure remote access</li>
-                  <li>Use a reverse proxy with TLS/HTTPS</li>
-                </ul>
-              </div>
-              
-              <div className="security-checklist">
-                <h4>{isNativeIOS ? 'Security Requirements' : '🔒 Security Requirements'}</h4>
-                <ul>
-                  <li>{isNativeIOS ? 'Open TCP port 4096 in OS firewall' : '✅ Open TCP port 4096 in OS firewall'}</li>
-                  <li>{isNativeIOS ? 'Configure router/NAT port forwarding' : '✅ Configure router/NAT port forwarding'}</li>
-                  <li>{isNativeIOS ? 'Use strong authentication passwords' : '✅ Use strong authentication passwords'}</li>
-                  <li>{isNativeIOS ? 'Prefer TLS/HTTPS for external access' : '✅ Prefer TLS/HTTPS for external access'}</li>
-                  <li>{isNativeIOS ? 'Restrict source IPs when possible' : '✅ Restrict source IPs when possible'}</li>
-                  <li>{isNativeIOS ? 'Never expose without authentication' : '⚠️ Never expose without authentication'}</li>
-                </ul>
-              </div>
-            </div>
-          )}
-
           {helpPage === "troubleshooting" && (
             <div className="help-content fade-in">
-              <h3>Troubleshooting Guide</h3>
-              
-              <div className="troubleshooting-steps">
-                <h4>{isNativeIOS ? 'Connection Diagnostics' : '🔍 Connection Diagnostics'}</h4>
-                <ol>
-                  <li><strong>Verify Server:</strong> Check if OpenCode is listening on port 4096</li>
-                  <li><strong>Test Locally:</strong> Check health endpoint from the same machine</li>
-                  <li><strong>Test Network:</strong> Check health endpoint from your phone browser</li>
-                  <li><strong>Check Firewall:</strong> Ensure port 4096 is open in OS firewall</li>
-                </ol>
-              </div>
-              
+              <h3>Diagnose the connection</h3>
+              <ol>
+                <li>Run Test Connection in Settings and read the exact result.</li>
+                <li>Check {helpBackendName} locally on its host.</li>
+                <li>Check the same endpoint through the LAN address or Tailscale path.</li>
+                <li>Fix the reported layer before changing unrelated settings.</li>
+              </ol>
+
               <div className="health-checks">
-                <h4>{isNativeIOS ? 'Health Check Commands' : '🩺 Health Check Commands'}</h4>
-                <div className="code-examples">
-                  <h5>Local Machine:</h5>
-                  <pre>curl -u opencode:your-password \
-http://127.0.0.1:4096/global/health</pre>
-                  
-                  <h5>From Phone/Network:</h5>
-                  <pre>curl -u opencode:your-password \
-http://YOUR_PC_IP:4096/global/health</pre>
-                </div>
+                <h4>Health checks</h4>
+                <p>macOS / Linux, on the host:</p>
+                <pre>curl -u {helpUsername}:your-password http://127.0.0.1:{helpPort}{helpHealthPath}</pre>
+                <p>Windows or another LAN machine (PowerShell must use <code>curl.exe</code>, not its <code>curl</code> alias):</p>
+                <pre>curl.exe -u {helpUsername}:your-password http://YOUR_PC_IP:{helpPort}{helpHealthPath}</pre>
               </div>
-              
+
               <div className="common-issues">
-                <h4>{isNativeIOS ? 'Common Issues' : '⚠️ Common Issues'}</h4>
-                <ul>
-                  <li><strong>CORS Errors:</strong> Add <code>--cors</code> flags to server</li>
-                  <li><strong>Connection Timeout:</strong> Check firewall settings</li>
-                  <li><strong>Auth Failures:</strong> Verify username/password</li>
-                  <li><strong>Session Issues:</strong> Re-open session and check server models</li>
-                </ul>
+                <h4>Cannot reach {helpBackendName}</h4>
+                <p>Confirm the process and its terminal are still running, then check the host and port. LAN access requires a listener on <code>0.0.0.0</code> and an OS firewall rule; Tailscale Serve can proxy a loopback listener but both devices must be connected to the tailnet.</p>
+
+                <h4>401 Unauthorized</h4>
+                <p>The network path reached the backend. Correct the username or password, then restart the bridge after changing its credential environment variables.</p>
+
+                <h4>Wrong backend or capabilities mismatch</h4>
+                <p>Make the backend selected in Settings match the bridge's <code>--backend</code> value, then test again.</p>
+
+                <h4>Works in Safari but not native iOS</h4>
+                <p>Use Tailscale Serve with its HTTPS MagicDNS hostname and port <code>443</code>. Direct Tailscale <code>100.x.x.x</code> HTTP can be accepted by Safari and rejected by native iOS networking.</p>
+
+                <h4>CORS error or Live updates reconnecting</h4>
+                <p>Allow the exact web origin on the host. Native live updates require <code>capacitor://localhost</code>. A successful health request does not prove that the authenticated SSE connection is allowed.</p>
+
+                <h4>Sessions are missing or stale</h4>
+                <p>Refresh Sessions and confirm the bridge ACP process is healthy. An arbitrary desktop OMP session does not provide live events to the direct bridge; run <code>/collab</code> in that session and attach its link instead.</p>
+
+                <h4>Folder rejected</h4>
+                <p>Restart the bridge with a <code>--root</code> that contains the requested folder. The first root is used by Use server default.</p>
+
+                <h4>Collab is missing, read-only, or not persisting</h4>
+                <p>Verify the bearer link and the desktop join message, then return to Sessions. Read-only links intentionally hide prompt, abort, and reply controls. Saved attachments require the native iOS Keychain plugin.</p>
+
+                <h4>Models, agents, or commands are unavailable</h4>
+                <p>Reconnect, refresh AI options or Commands, and confirm the selected backend and provider support that capability.</p>
               </div>
             </div>
           )}
@@ -4635,13 +4607,7 @@ http://YOUR_PC_IP:4096/global/health</pre>
           {helpPage === "commands" && (
             <div className="help-content fade-in">
               <h3>Slash Commands</h3>
-              <p>Local mobile commands are handled by the app. Server commands are loaded from OpenCode and sent to <code>/session/:id/command</code>.</p>
-              <div className="example-commands">
-                <pre>/help</pre>
-                <pre>/commands</pre>
-                <pre>/skills</pre>
-                <pre>/status</pre>
-              </div>
+              <p>Commands are loaded from {helpBackendName} after connection. Type <code>/name arguments</code> in the active session; Enter sends and Shift+Enter inserts a new line.</p>
               <div className="help-tabs compact" role="tablist">
                 <button
                   className={commandFilter === "all" ? "active" : ""}
@@ -4660,21 +4626,19 @@ http://YOUR_PC_IP:4096/global/health</pre>
                   Skills
                 </button>
               </div>
-               
+
               {displayedCommands.length === 0 ? (
                 <div className="no-commands">
                   <HelpIcon size={48} className="icon-empty-state" />
                   <p className="subtle">No {commandFilter === "skill" ? "skills" : "server commands"} available</p>
-                  <p className="subtle">Connect to a server to see available commands and skills</p>
+                  <p className="subtle">Connect to {helpBackendName} and refresh Commands to load supported commands and skills.</p>
                 </div>
               ) : (
                 <div className="commands-grid">
                   {displayedCommands.map((cmd) => (
                     <div key={cmd.name} className="command-card">
                       <code className="command-name">/{cmd.name}</code>
-                      {cmd.description && (
-                        <p className="command-description">{cmd.description}</p>
-                      )}
+                      {cmd.description && <p className="command-description">{cmd.description}</p>}
                       {cmd.source && <p className="subtle">{cmd.source}</p>}
                     </div>
                   ))}

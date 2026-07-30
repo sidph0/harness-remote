@@ -39,4 +39,11 @@ assert.equal(it('settings.themeDark'), 'Scuro')
 assert.equal(zh('settings.themeSystem'), '跟隨系統')
 assert.equal(en('todo.title'), 'Todo Items')
 
+assert.equal(en('help.quickStart'), 'Quick Start')
+assert.equal(it('help.quickStart'), 'Guida rapida')
+assert.equal(zh('help.quickStart'), '快速開始')
+assert.equal(en('help.connections'), 'Connections')
+assert.equal(it('help.connections'), 'Connessioni')
+assert.equal(zh('help.connections'), '連線')
+
 console.log('i18n tests passed')
