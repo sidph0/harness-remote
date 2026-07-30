@@ -184,20 +184,16 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
     messages.push({ info: { id: entry.id, role: "user", sessionID, time: { created } }, parts })
   }
 
-  let streamReasoningID: string | undefined
+  let streamMessage: MessageEnvelope | undefined
   if (snapshot.stream) {
     const streamCreated = timestamp(snapshot.stream.timestamp)
     const committed = snapshot.streamDone && snapshot.entries.some(entry =>
       entry.type === "message" && entry.message?.role === "assistant" && timestamp(entry.message.timestamp, entry.timestamp) === streamCreated)
     if (!committed) {
       const id = `collab-stream-${streamCreated}`
-      const streamMessage: MessageEnvelope = {
+      streamMessage = {
         info: { id, role: "assistant", sessionID, time: { created: streamCreated } },
         parts: messageParts(id, snapshot.stream, streamCreated, results, snapshot.activeTools, snapshot.completedTools, seenTools)
-      }
-      if (!snapshot.streamDone) {
-        const trailing = streamMessage.parts[streamMessage.parts.length - 1]
-        if (trailing?.type === "reasoning") streamReasoningID = trailing.id
       }
       activitySequences.set(streamMessage, snapshot.streamSequence)
       messages.push(streamMessage)
@@ -239,6 +235,16 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
     .map((index) => messages[index])
     .sort((a, b) => activitySequences.get(a)! - activitySequences.get(b)!)
   for (let index = 0; index < activitySlots.length; index += 1) messages[activitySlots[index]] = orderedActivity[index]
+  let latestMessage: MessageEnvelope | undefined
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].parts.length === 0) continue
+    latestMessage = messages[index]
+    break
+  }
+  const streamTrailing = streamMessage?.parts[streamMessage.parts.length - 1]
+  const streamReasoningID = !snapshot.streamDone && latestMessage === streamMessage && streamTrailing?.type === "reasoning"
+    ? streamTrailing.id
+    : undefined
 
   return {
     session,

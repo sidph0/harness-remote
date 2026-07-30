@@ -375,6 +375,7 @@ const streamAfterTool = adaptCollabSnapshot(snapshot({
 assert.deepEqual(streamAfterTool.messages.map(message => message.info.id), [
   'collab-stream-durable-user', 'collab-tool-ordering-tool', 'collab-tool-durable-assistant', 'collab-stream-1785240030000',
 ], 'durable prefix-colliding entries stay fixed when the stream follows the tool')
+assert.equal(streamAfterTool.streamReasoningID, 'collab-stream-1785240030000:reasoning:0', 'a stream received after event-only tool activity is current')
 const toolAfterStream = adaptCollabSnapshot(snapshot({
   entries: orderingEntries,
   stream: orderingStream,
@@ -385,6 +386,7 @@ const toolAfterStream = adaptCollabSnapshot(snapshot({
 assert.deepEqual(toolAfterStream.messages.map(message => message.info.id), [
   'collab-stream-durable-user', 'collab-stream-1785240030000', 'collab-tool-durable-assistant', 'collab-tool-ordering-tool',
 ], 'durable prefix-colliding entries stay fixed when the tool follows the stream')
+assert.equal(toolAfterStream.streamReasoningID, undefined, 'later event-only tool activity ends prior stream reasoning')
 
 const eventWithoutHeader = adaptCollabSnapshot(snapshot({
   header: null,
