@@ -4,7 +4,8 @@ type Message = { role?: unknown, content?: unknown, timestamp?: unknown, toolCal
 type Entry = { type?: unknown, id?: unknown, timestamp?: unknown, customType?: unknown, content?: unknown, details?: unknown, display?: unknown, message?: Message }
 type Header = { id: string, title?: string, timestamp: string, cwd: string }
 type Agent = { id: string, displayName: string, kind: string, parentId?: string, status: string, hasSessionFile: boolean, createdAt: number, lastActivity: number }
-type ActiveTool = { args?: unknown, partialResult?: unknown }
+type ActiveTool = { toolCallId: string, toolName: string, args: unknown, intent?: string, partialResult?: unknown, startedAt: number }
+type CompletedTool = ActiveTool & { result: unknown, isError: boolean, completedAt: number }
 type UiRequest = { reqId: number, kind: string, title: string, options?: readonly unknown[], initialIndex?: number, helpText?: string, selectionMarker?: string, prefill?: string }
 type Snapshot = {
   readonly header: Header | null
@@ -16,6 +17,7 @@ type Snapshot = {
   readonly stream: Message | null
   readonly streamDone: boolean
   readonly activeTools: ReadonlyMap<string, ActiveTool>
+  readonly completedTools: ReadonlyMap<string, CompletedTool>
   readonly working: boolean
   readonly uiRequest: UiRequest | null
 }
@@ -46,7 +48,9 @@ function messageParts(
   message: Message,
   created: number,
   results: ReadonlyMap<string, { message: Message, completed: number }>,
-  activeTools: ReadonlyMap<string, ActiveTool>
+  activeTools: ReadonlyMap<string, ActiveTool>,
+  completedTools: ReadonlyMap<string, CompletedTool>,
+  seenTools?: Set<string>
 ): MessagePart[] {
   const content: unknown[] = typeof message.content === "string"
     ? [{ type: "text", text: message.content }]
@@ -62,16 +66,27 @@ function messageParts(
     }
     if (part.type !== "toolCall" || typeof part.id !== "string" || typeof part.name !== "string") return []
 
+    seenTools?.add(part.id)
     const result = results.get(part.id)
+    const completed = completedTools.get(part.id)
     const active = activeTools.get(part.id)
-    const input = active?.args ?? part.arguments
-    const output = result ? text(result.message.content) : active ? text(active.partialResult) : undefined
+    const event = completed ?? active
+    const input = event?.args ?? part.arguments
+    const output = result
+      ? text(result.message.content)
+      : completed
+        ? text(completed.result)
+        : active?.partialResult === undefined ? undefined : text(active.partialResult)
+    const isError = result ? Boolean(result.message.isError) : Boolean(completed?.isError)
     const state = {
-      status: result ? (result.message.isError ? "error" : "completed") : "running",
+      status: isError ? "error" : result || completed ? "completed" : "running",
       ...(isRecord(input) ? { input } : {}),
       ...(output === undefined ? {} : { output }),
-      ...(result?.message.isError ? { error: output ?? "" } : {}),
-      time: { start: created, ...(result ? { end: result.completed } : {}) }
+      ...(isError ? { error: output ?? "" } : {}),
+      time: {
+        start: event?.startedAt ?? created,
+        ...(result ? { end: result.completed } : completed ? { end: completed.completedAt } : {})
+      }
     }
     return [{ id: `${id}:tool:${part.id}`, messageID: id, type: "tool", tool: part.name, callID: part.id, state }]
   })
@@ -142,6 +157,7 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
   }
 
   const messages: MessageEnvelope[] = []
+  const seenTools = new Set<string>()
   for (const entry of snapshot.entries) {
     if (entry.type === "message" && typeof entry.id === "string" && (entry.message?.role === "user" || entry.message?.role === "assistant")) {
       const created = timestamp(entry.message.timestamp, entry.timestamp)
@@ -152,13 +168,13 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
           sessionID,
           time: { created, ...(entry.message.role === "assistant" ? { completed: timestamp(entry.timestamp) } : {}) }
         },
-        parts: messageParts(entry.id, entry.message, created, results, snapshot.activeTools)
+        parts: messageParts(entry.id, entry.message, created, results, snapshot.activeTools, snapshot.completedTools, entry.message.role === "assistant" ? seenTools : undefined)
       })
       continue
     }
     if (entry.type !== "custom_message" || entry.customType !== "collab-prompt" || entry.display === false || typeof entry.id !== "string") continue
     const created = timestamp(entry.timestamp)
-    const parts = messageParts(entry.id, { role: "user", content: entry.content }, created, results, snapshot.activeTools)
+    const parts = messageParts(entry.id, { role: "user", content: entry.content }, created, results, snapshot.activeTools, snapshot.completedTools)
     const from = isRecord(entry.details) && typeof entry.details.from === "string" ? entry.details.from : ""
     parts.push({ id: `${entry.id}:source`, messageID: entry.id, type: "collab-prompt", text: from })
     messages.push({ info: { id: entry.id, role: "user", sessionID, time: { created } }, parts })
@@ -172,9 +188,32 @@ export function adaptCollabSnapshot(snapshot: Snapshot, callbacks?: Callbacks) {
       const id = `collab-stream-${streamCreated}`
       messages.push({
         info: { id, role: "assistant", sessionID, time: { created: streamCreated } },
-        parts: messageParts(id, snapshot.stream, streamCreated, results, snapshot.activeTools)
+        parts: messageParts(id, snapshot.stream, streamCreated, results, snapshot.activeTools, snapshot.completedTools, seenTools)
       })
     }
+  }
+
+  const synthetic: MessageEnvelope[] = []
+  for (const tool of snapshot.completedTools.values()) {
+    if (seenTools.has(tool.toolCallId)) continue
+    const id = `collab-tool-${tool.toolCallId}`
+    synthetic.push({
+      info: { id, role: "assistant", sessionID, time: { created: tool.startedAt, completed: tool.completedAt } },
+      parts: messageParts(id, { content: [{ type: "toolCall", id: tool.toolCallId, name: tool.toolName, arguments: tool.args }] }, tool.startedAt, results, snapshot.activeTools, snapshot.completedTools)
+    })
+  }
+  for (const tool of snapshot.activeTools.values()) {
+    if (seenTools.has(tool.toolCallId) || snapshot.completedTools.has(tool.toolCallId)) continue
+    const id = `collab-tool-${tool.toolCallId}`
+    synthetic.push({
+      info: { id, role: "assistant", sessionID, time: { created: tool.startedAt } },
+      parts: messageParts(id, { content: [{ type: "toolCall", id: tool.toolCallId, name: tool.toolName, arguments: tool.args }] }, tool.startedAt, results, snapshot.activeTools, snapshot.completedTools)
+    })
+  }
+  synthetic.sort((a, b) => a.info.time.created - b.info.time.created || a.info.id.localeCompare(b.info.id))
+  for (const message of synthetic) {
+    const index = messages.findIndex(existing => existing.info.time.created > message.info.time.created)
+    messages.splice(index < 0 ? messages.length : index, 0, message)
   }
 
   return {

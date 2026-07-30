@@ -39,6 +39,7 @@ function snapshot(overrides = {}) {
     stream: null,
     streamDone: false,
     activeTools: new Map(),
+    completedTools: new Map(),
     working: false,
     readOnly: false,
     uiRequest: null,
@@ -229,6 +230,116 @@ const committedStream = adaptCollabSnapshot(snapshot({
 }))
 assert.equal(committedStream.messages.length, 1, 'a durable assistant entry must replace its streaming ghost')
 assert.equal(committedStream.messages[0].info.id, 'assistant-stream-committed')
+
+const liveCompleted = adaptCollabSnapshot(snapshot({
+  entries: [{
+    type: 'message',
+    id: 'assistant-live',
+    parentId: null,
+    timestamp: '2026-07-28T12:00:08.000Z',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'live-call', name: 'bash', arguments: { command: 'echo stale' } }],
+      model: 'synthetic/model',
+      usage,
+      stopReason: 'toolUse',
+      timestamp: 1_785_240_008_000
+    }
+  }],
+  activeTools: new Map([['live-call', {
+    toolCallId: 'live-call', toolName: 'bash', args: { command: 'echo active' }, partialResult: 'active output', startedAt: 1_785_240_007_000
+  }]]),
+  completedTools: new Map([['live-call', {
+    toolCallId: 'live-call', toolName: 'bash', args: { command: 'echo live' },
+    result: 'live result', isError: false, startedAt: 1_785_240_008_000, completedAt: 1_785_240_009_000
+  }]])
+}))
+assert.deepEqual(liveCompleted.messages[0].parts[0].state, {
+  status: 'completed',
+  input: { command: 'echo live' },
+  output: 'live result',
+  time: { start: 1_785_240_008_000, end: 1_785_240_009_000 }
+})
+
+const historicalWins = adaptCollabSnapshot(snapshot({
+  entries: [
+    {
+      type: 'message', id: 'assistant-precedence', timestamp: '2026-07-28T12:00:11.000Z',
+      message: {
+        role: 'assistant', content: [{ type: 'toolCall', id: 'precedence-call', name: 'bash', arguments: { command: 'stale' } }],
+        model: 'synthetic/model', usage, stopReason: 'toolUse', timestamp: 1_785_240_010_000
+      }
+    },
+    {
+      type: 'message', id: 'precedence-result', timestamp: '2026-07-28T12:00:14.000Z',
+      message: { role: 'toolResult', toolCallId: 'precedence-call', toolName: 'bash', content: 'history wins', isError: false, timestamp: 1_785_240_014_000 }
+    }
+  ],
+  activeTools: new Map([['precedence-call', {
+    toolCallId: 'precedence-call', toolName: 'bash', args: { command: 'active' }, partialResult: 'active loses', startedAt: 1_785_240_011_000
+  }]]),
+  completedTools: new Map([['precedence-call', {
+    toolCallId: 'precedence-call', toolName: 'bash', args: { command: 'completed' }, result: 'completed loses', isError: true,
+    startedAt: 1_785_240_012_000, completedAt: 1_785_240_013_000
+  }]])
+}))
+assert.deepEqual(historicalWins.messages[0].parts[0].state, {
+  status: 'completed',
+  input: { command: 'completed' },
+  output: 'history wins',
+  time: { start: 1_785_240_012_000, end: 1_785_240_014_000 }
+})
+
+const eventOnly = adaptCollabSnapshot(snapshot({
+  entries: [
+    { type: 'message', id: 'ordinary-before', timestamp: '2026-07-28T12:00:10.000Z', message: { role: 'user', content: 'before', timestamp: 1_785_240_010_000 } },
+    { type: 'message', id: 'ordinary-after', timestamp: '2026-07-28T12:00:20.000Z', message: { role: 'user', content: 'after', timestamp: 1_785_240_020_000 } }
+  ],
+  stream: { ...streamingMessage, timestamp: 1_785_240_030_000 },
+  activeTools: new Map([['event-running', {
+    toolCallId: 'event-running', toolName: 'read', args: { path: 'running.txt' }, partialResult: 'partial', startedAt: 1_785_240_015_000,
+    bearer: 'secret-running-bearer', transportFrame: 'secret-running-frame'
+  }]]),
+  completedTools: new Map([
+    ['event-complete', {
+      toolCallId: 'event-complete', toolName: 'bash', args: { command: 'echo done' }, result: 'done', isError: false,
+      startedAt: 1_785_240_025_000, completedAt: 1_785_240_026_000, bearer: 'secret-complete-bearer', transportFrame: 'secret-complete-frame'
+    }],
+    ['event-error', {
+      toolCallId: 'event-error', toolName: 'bash', args: { command: 'exit 1' }, result: 'failure', isError: true,
+      startedAt: 1_785_240_012_000, completedAt: 1_785_240_013_000
+    }]
+  ])
+}))
+assert.deepEqual(eventOnly.messages.map(message => message.info.id), [
+  'ordinary-before',
+  'collab-tool-event-error',
+  'collab-tool-event-running',
+  'ordinary-after',
+  'collab-tool-event-complete',
+  'collab-stream-1785240030000'
+])
+assert.deepEqual(eventOnly.messages[1].parts[0].state, {
+  status: 'error', input: { command: 'exit 1' }, output: 'failure', error: 'failure',
+  time: { start: 1_785_240_012_000, end: 1_785_240_013_000 }
+})
+assert.deepEqual(eventOnly.messages[2].parts[0].state, {
+  status: 'running', input: { path: 'running.txt' }, output: 'partial', time: { start: 1_785_240_015_000 }
+})
+assert.deepEqual(eventOnly.messages[4].parts[0].state, {
+  status: 'completed', input: { command: 'echo done' }, output: 'done', time: { start: 1_785_240_025_000, end: 1_785_240_026_000 }
+})
+const eventOnlyJson = JSON.stringify(eventOnly.messages)
+assert.equal(eventOnlyJson.includes('secret-running-bearer'), false)
+assert.equal(eventOnlyJson.includes('secret-running-frame'), false)
+assert.equal(eventOnlyJson.includes('secret-complete-bearer'), false)
+assert.equal(eventOnlyJson.includes('secret-complete-frame'), false)
+
+const eventWithoutHeader = adaptCollabSnapshot(snapshot({
+  header: null,
+  activeTools: new Map([['headerless', { toolCallId: 'headerless', toolName: 'read', args: {}, startedAt: 10 }]])
+}))
+assert.equal(eventWithoutHeader.messages[0].info.sessionID, '')
 
 assert.deepEqual(adaptCollabSnapshot(snapshot({ state: { ...idleState, isStreaming: true } })).status, { type: 'busy' })
 assert.deepEqual(adaptCollabSnapshot(snapshot({ state: { ...idleState, isAborting: true }, working: true })).status, { type: 'aborting' })
