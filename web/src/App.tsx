@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import { App as CapacitorApp } from "@capacitor/app"
 import { Capacitor, type PluginListenerHandle } from "@capacitor/core"
 import ReactMarkdown from "react-markdown"
@@ -1859,6 +1859,7 @@ function App() {
   const stickToBottomRef = useRef(true)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const composerRef = useRef<HTMLDivElement | null>(null)
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   // Both gate on mainView, not view: on desktop, picking a session leaves view === "sessions" while
   // the chat is what's actually rendered, so gating on view left the buttons permanently inactive.
   const [jumpAffordances, refreshChatJumps] = useJumpAffordances(mainView === "detail", () =>
@@ -2487,6 +2488,16 @@ function App() {
     const scope = container.closest<HTMLElement>(".detail") ?? container.parentElement ?? container
     scope.style.setProperty("--chat-bottom-clearance", `${clearance}px`)
   }
+
+  useLayoutEffect(() => {
+    if (!isNativeIOS || mainView !== "detail") return
+    const textarea = composerTextareaRef.current
+    if (!textarea) return
+
+    textarea.style.height = "auto"
+    textarea.style.height = `${Math.min(132, Math.max(44, textarea.scrollHeight))}px`
+    syncChatBottomClearance()
+  }, [composer, isNativeIOS, mainView])
 
   /** The chat is its own scroller in the desktop layout but lets the page scroll on mobile, so
    *  anything reading scroll position has to look at whichever of the two actually scrolls. */
@@ -4126,6 +4137,7 @@ function App() {
 
           {!selectedCollabReadOnly && <div className="composer" ref={composerRef}>
             <textarea
+              ref={composerTextareaRef}
               value={composer}
               onChange={(event) => setComposer(event.target.value)}
               placeholder={t('detail.composerPlaceholder')}
@@ -4478,6 +4490,7 @@ function App() {
 
               {/* Window width alone picks the layout, so the one thing worth stating is where the
                   boundary is: otherwise a resized window looks like the app lost its sidebar. */}
+              {!isNativeIOS && <>
               <h3>Desktop Layout</h3>
               <p>
                 A window at least {DESKTOP_MIN_WIDTH}px wide shows the sessions sidebar and the
@@ -4491,6 +4504,7 @@ function App() {
                 <li><strong>Working sessions:</strong> A moving accent bar down the left of a row replaces the status pill.</li>
                 <li><strong>Settings and Help:</strong> Open over the conversation, so it stays where you left it.</li>
               </ul>
+              </>}
 
               <h3>Key Features</h3>
               <ul>
@@ -4674,23 +4688,27 @@ http://YOUR_PC_IP:4096/global/health</pre>
       </div>
 
       <nav className="bottom-nav" role="navigation" aria-label="Mobile navigation">
-        {navItems.map((item) => (
-          <button
-            key={item.view}
-            className={view === item.view ? "active" : ""}
-            onClick={() => {
-              setView(item.view);
-              if (item.view === "sessions") {
-                requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
-              }
-            }}
-            disabled={item.disabled}
-            aria-label={item.label}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </button>
-        ))}
+        {navItems.map((item) => {
+          const isActive = view === item.view || (isNativeIOS && view === "detail" && item.view === "sessions")
+          return (
+            <button
+              key={item.view}
+              className={isActive ? "active" : ""}
+              onClick={() => {
+                setView(item.view);
+                if (item.view === "sessions") {
+                  requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
+                }
+              }}
+              disabled={item.disabled}
+              aria-label={item.label}
+              aria-current={isActive ? "page" : undefined}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          )
+        })}
       </nav>
     </div>
   )
