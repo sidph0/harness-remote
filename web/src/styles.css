@@ -3117,9 +3117,11 @@ button.btn-icon.compact {
 }
 
 .ios-native .composer textarea {
+  height: 44px;
   min-height: 44px;
   max-height: 132px;
   resize: none;
+  overflow-y: auto;
   border: 0;
   background: transparent;
 }
@@ -3234,6 +3236,7 @@ button.btn-icon.compact {
 }
 
 .ios-native .bottom-nav button {
+  position: relative;
   min-height: 48px;
   border: 0;
   border-radius: 9px;
@@ -3247,6 +3250,19 @@ button.btn-icon.compact {
   border: 0;
   background: transparent;
   color: #0A84FF;
+  font-weight: 700;
+}
+
+.ios-native .bottom-nav button.active::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--space-5);
+  height: var(--space-1);
+  transform: translateX(-50%);
+  border-radius: var(--radius-sm);
+  background: currentColor;
 }
 
 @media (max-width: 430px) {
