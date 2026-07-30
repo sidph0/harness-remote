@@ -23,6 +23,7 @@ import { CollabClient } from "./collab/client"
 import { adaptCollabSnapshot } from "./collab/adapter"
 import { collabSessionView, mergeCollabSessionViews } from "./collab/sessionView"
 import { currentStreamReasoningID, nextDisclosureOpen } from "./collab/activityView"
+import { ActivityDisclosure } from "./collab/ActivityDisclosure"
 import {
   SettingsIcon,
   FolderIcon,
@@ -938,48 +939,48 @@ function ToolPartView({
   const todos = tool === "todowrite" ? parseTodos(input.todos) : null
   const questions = tool === "question" ? parseQuestions(input.questions) : null
   return (
-    <>
-      <button
-        type="button"
-        className={`message-tool-summary message-tool-${status}`}
-        aria-expanded={open}
-        aria-controls={detailsID}
-        onClick={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
-      >
-        <span className="message-tool-label">{label}</span>
-        <span className="message-tool-meta">
-          {diff && (diff.additions > 0 || diff.deletions > 0) && (
-            <span className="message-tool-diff-stats">
-              {diff.additions > 0 && <span className="diff-stat-add">+{diff.additions}</span>}
-              {diff.deletions > 0 && <span className="diff-stat-del">-{diff.deletions}</span>}
-            </span>
-          )}
-          {status === "error" && (
-            <span className="message-tool-status-error" title={t('action.toolFailed')} aria-label={t('action.toolFailed')}>
-              ✕
-            </span>
-          )}
-          {(status === "pending" || status === "running") && (
-            <span className="message-tool-status-pending" title={t('action.running')} aria-label={t('action.running')}>
-              …
-            </span>
-          )}
-        </span>
-      </button>
-      <div id={detailsID} className="message-tool-details" hidden={!open}>
-        {todos ? (
-          <TodoListView items={todos} />
-        ) : questions ? (
-          <QuestionListView questions={questions} answers={part.state?.metadata?.answers} />
-        ) : (
-          <>
-            <pre className="message-tool-command">{command}</pre>
-            {patch ? <DiffLines patch={patch} /> : part.state?.output && <pre className="message-tool-output">{part.state.output}</pre>}
-          </>
-        )}
-        {part.state?.error && <pre className="message-tool-output message-tool-error">{part.state.error}</pre>}
-      </div>
-    </>
+    <ActivityDisclosure
+      id={detailsID}
+      open={open}
+      onToggle={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
+      summaryClassName={`message-tool-summary message-tool-${status}`}
+      detailsClassName="message-tool-details"
+      summary={(
+        <>
+          <span className="message-tool-label">{label}</span>
+          <span className="message-tool-meta">
+            {diff && (diff.additions > 0 || diff.deletions > 0) && (
+              <span className="message-tool-diff-stats">
+                {diff.additions > 0 && <span className="diff-stat-add">+{diff.additions}</span>}
+                {diff.deletions > 0 && <span className="diff-stat-del">-{diff.deletions}</span>}
+              </span>
+            )}
+            {status === "error" && (
+              <span className="message-tool-status-error" title={t('action.toolFailed')} aria-label={t('action.toolFailed')}>
+                ✕
+              </span>
+            )}
+            {(status === "pending" || status === "running") && (
+              <span className="message-tool-status-pending" title={t('action.running')} aria-label={t('action.running')}>
+                …
+              </span>
+            )}
+          </span>
+        </>
+      )}
+    >
+      {todos ? (
+        <TodoListView items={todos} />
+      ) : questions ? (
+        <QuestionListView questions={questions} answers={part.state?.metadata?.answers} />
+      ) : (
+        <>
+          <pre className="message-tool-command">{command}</pre>
+          {patch ? <DiffLines patch={patch} /> : part.state?.output && <pre className="message-tool-output">{part.state.output}</pre>}
+        </>
+      )}
+      {part.state?.error && <pre className="message-tool-output message-tool-error">{part.state.error}</pre>}
+    </ActivityDisclosure>
   )
 }
 
@@ -1001,20 +1002,16 @@ function ReasoningPartView({
   const label = reasoningLabel([part], t)
   const detailsID = `message-reasoning-details-${part.id}`
   return (
-    <>
-      <button
-        type="button"
-        className="message-reasoning-summary"
-        aria-expanded={open}
-        aria-controls={detailsID}
-        onClick={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
-      >
-        {label}
-      </button>
-      <div id={detailsID} className="message-reasoning-details" hidden={!open}>
-        <pre className="message-reasoning-text">{part.text}</pre>
-      </div>
-    </>
+    <ActivityDisclosure
+      id={detailsID}
+      open={open}
+      onToggle={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
+      summaryClassName="message-reasoning-summary"
+      detailsClassName="message-reasoning-details"
+      summary={label}
+    >
+      <pre className="message-reasoning-text">{part.text}</pre>
+    </ActivityDisclosure>
   )
 }
 
@@ -1231,34 +1228,30 @@ function ActionGroupView({
   useEffect(() => setOpen((current) => nextDisclosureOpen(current, live)), [live])
   const detailsID = `message-action-details-${parts[0].id}`
   return (
-    <>
-      <button
-        type="button"
-        className="message-action-summary"
-        aria-expanded={open}
-        aria-controls={detailsID}
-        onClick={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
-      >
-        <span>{summarizeActionGroup(parts, t)}</span>
-      </button>
-      <div id={detailsID} className="message-action-details" hidden={!open}>
-        {parts.map((part, index) => (
-          <Fragment key={part.id}>
-            {index > 0 && <hr className="message-action-divider" />}
-            <MessagePartView
-              part={part}
-              config={config}
-              sessionID={sessionID}
-              directory={directory}
-              timestamp={timestamp}
-              collabLive={collabLive}
-              liveReasoningID={liveReasoningID}
-              t={t}
-            />
-          </Fragment>
-        ))}
-      </div>
-    </>
+    <ActivityDisclosure
+      id={detailsID}
+      open={open}
+      onToggle={() => setOpen((current) => nextDisclosureOpen(current, "toggle"))}
+      summaryClassName="message-action-summary"
+      detailsClassName="message-action-details"
+      summary={<span>{summarizeActionGroup(parts, t)}</span>}
+    >
+      {parts.map((part, index) => (
+        <Fragment key={part.id}>
+          {index > 0 && <hr className="message-action-divider" />}
+          <MessagePartView
+            part={part}
+            config={config}
+            sessionID={sessionID}
+            directory={directory}
+            timestamp={timestamp}
+            collabLive={collabLive}
+            liveReasoningID={liveReasoningID}
+            t={t}
+          />
+        </Fragment>
+      ))}
+    </ActivityDisclosure>
   )
 }
 

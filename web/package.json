@@ -16,7 +16,7 @@
     "test:model": "node src/model-regression.test.mjs",
     "test:events": "node --experimental-strip-types src/opencode-events.test.mjs",
     "test:config": "node --experimental-strip-types src/server-config.test.mjs",
-    "test:collab": "bun src/collab/link.test.mjs && bun src/collab/client.test.mjs && bun src/collab/adapter.test.mjs && bun src/collab/attachments.test.mjs && bun src/collab/sessionView.test.mjs && bun src/collab/activityView.test.mjs"
+    "test:collab": "bun src/collab/link.test.mjs && bun src/collab/client.test.mjs && bun src/collab/adapter.test.mjs && bun src/collab/attachments.test.mjs && bun src/collab/sessionView.test.mjs && bun src/collab/activityView.test.mjs && bun src/collab/ActivityDisclosure.test.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
