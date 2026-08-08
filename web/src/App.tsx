@@ -25,6 +25,7 @@ import { adaptCollabSnapshot } from "./collab/adapter"
 import { collabSessionView, mergeCollabSessionViews } from "./collab/sessionView"
 import { nextDisclosureOpen, shouldLoadPatchDiff } from "./collab/activityView"
 import { ActivityDisclosure } from "./collab/ActivityDisclosure"
+import { nativeTabDirection, resolveNativeSwipe, type NativeView } from "./nativeNavigation"
 import {
   SettingsIcon,
   FolderIcon,
@@ -62,6 +63,12 @@ type Translator = ReturnType<typeof createTranslator>
  *  exactly the width the CSS does. Named because the Help page quotes the number back to the user. */
 const DESKTOP_MIN_WIDTH = 781
 const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`
+
+function nativeSwipeBlocked(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(
+    "button, input, textarea, select, a, pre, code, [role='button'], [role='dialog'], .session-context-strip, .help-tabs, .bottom-sheet, .modal-backdrop"
+  ))
+}
 
 const SIDEBAR_WIDTH_MIN = 220
 const SIDEBAR_WIDTH_MAX = 480
@@ -1744,6 +1751,39 @@ function App() {
   const [view, setView] = useState<"settings" | "sessions" | "detail" | "help">(() => {
     return config.host && config.port > 0 ? "sessions" : "settings"
   })
+  const [nativeTransition, setNativeTransition] = useState<"forward" | "back">("forward")
+  const nativeTouchRef = useRef<{ x: number; y: number; blocked: boolean } | null>(null)
+
+  function navigateNative(nextView: NativeView, direction: "forward" | "back") {
+    if (isNativeIOS) setNativeTransition(direction)
+    setView(nextView)
+    if (nextView === "sessions") {
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }))
+    }
+  }
+
+  function handleNativeTouchStart(event: React.TouchEvent) {
+    if (!isNativeIOS || event.touches.length !== 1) return
+    const touch = event.touches[0]
+    nativeTouchRef.current = { x: touch.clientX, y: touch.clientY, blocked: nativeSwipeBlocked(event.target) }
+  }
+
+  function handleNativeTouchEnd(event: React.TouchEvent) {
+    const start = nativeTouchRef.current
+    nativeTouchRef.current = null
+    const touch = event.changedTouches[0]
+    if (!isNativeIOS || !start || !touch) return
+    const result = resolveNativeSwipe({
+      view,
+      startX: start.x,
+      startY: start.y,
+      endX: touch.clientX,
+      endY: touch.clientY,
+      viewportWidth: window.innerWidth,
+      blocked: start.blocked,
+    })
+    if (result) navigateNative(result.view, result.direction)
+  }
   // Desktop gets a persistent left sidebar instead of the mobile top bar/bottom nav; this mirrors
   // the existing 780px CSS breakpoint so JS layout and stylesheet layout never disagree.
   const [isDesktop, setIsDesktop] = useState(() => !isNativeIOS && window.matchMedia(DESKTOP_MEDIA_QUERY).matches)
@@ -2208,7 +2248,7 @@ function App() {
     setDashboardError(null)
     setAwaitingAssistantReply(false)
     setRuntimeError(null)
-    setView("detail")
+    navigateNative("detail", "forward")
     if (collabClientsRef.current.has(sessionID)) {
       applyCollabDetail(sessionID)
       return
@@ -2682,7 +2722,7 @@ function App() {
       setDashboardError(null)
       setAwaitingAssistantReply(false)
       loadedMessagesRef.current = []
-      setView("detail")
+      navigateNative("detail", "forward")
       setLoadingSessionID(created.id)
       try {
         await loadSelected(created.id, created.directory)
@@ -3566,8 +3606,11 @@ function App() {
       )}
 
       <div
-        className="main-content"
+        className={`main-content${isNativeIOS ? ` ios-page-${nativeTransition}` : ""}`}
         style={isDesktop ? { width: mainWidth, flex: `0 0 ${mainWidth}px`, position: "relative" } : undefined}
+        onTouchStart={handleNativeTouchStart}
+        onTouchEnd={handleNativeTouchEnd}
+        onTouchCancel={() => { nativeTouchRef.current = null }}
       >
       {isDesktop && (
         <div className="resize-handle resize-handle--end" onPointerDown={dragMainRight} role="separator" aria-orientation="vertical" aria-label="Resize detail panel" />
@@ -3985,8 +4028,7 @@ function App() {
           <div className="detail-topbar">
             {!isDesktop && (
               <button className={isNativeIOS ? "detail-back-button" : "btn-secondary"} onClick={() => {
-                setView("sessions")
-                requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }))
+                navigateNative("sessions", "back")
               }}>
                 {isNativeIOS && <ChevronLeftIcon size={20} />}
                 {isNativeIOS ? t('nav.sessions') : t('detail.backToSessions')}
@@ -4660,9 +4702,11 @@ function App() {
               key={item.view}
               className={isActive ? "active" : ""}
               onClick={() => {
-                setView(item.view);
-                if (item.view === "sessions") {
-                  requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
+                if (isNativeIOS) {
+                  const direction = nativeTabDirection(view, item.view as Exclude<NativeView, "detail">)
+                  navigateNative(item.view, direction)
+                } else {
+                  setView(item.view)
                 }
               }}
               disabled={item.disabled}

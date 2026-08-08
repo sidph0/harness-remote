@@ -2,6 +2,8 @@
 build/
 web/node_modules/
 web/dist/
+desktop/node_modules/
+desktop/dist/
 web/ios/
 .superpowers/
 .worktrees/

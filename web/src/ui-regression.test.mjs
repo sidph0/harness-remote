@@ -489,4 +489,14 @@ const detachAfterSave = detachCollabBlock.slice(detachCollabBlock.indexOf('await
 assert.match(detachAfterSave, /if\s*\(selectedSessionRef\.current\?\.id\s*===\s*id\)/, 'detach should check the current selected session after the Keychain save fulfills')
 assert.doesNotMatch(detachAfterSave, /if\s*\(selectedID\s*===\s*id\)/, 'detach must not use the render-captured selectedID after awaiting the Keychain save')
 
+const nativeNavigation = readFileSync(new URL('./nativeNavigation.ts', import.meta.url), 'utf8')
+assert.ok(app.includes('resolveNativeSwipe'), 'native iOS should route intentional horizontal gestures through the tested swipe decision')
+assert.match(app, /isNativeIOS[\s\S]*?onTouchStart=\{handleNativeTouchStart\}/, 'touch navigation must stay gated to native iOS')
+assert.match(app, /nativeSwipeBlocked[\s\S]*?\[role='button'\]/, 'native swipes must not start on role-based interactive controls such as session cards')
+assert.match(nativeNavigation, /view === "detail"[\s\S]*?startX <= edge/, 'conversation back should require a rightward edge swipe')
+assert.match(styles, /\.ios-native \.ios-page-forward > [^{]+\{[^}]*animation:/, 'native pages should enter in the forward direction')
+assert.match(styles, /\.ios-native \.bottom-sheet\.fade-in[^{]*\{[^}]*animation:/, 'native sheets should rise instead of using the generic fade')
+assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.ios-native \.ios-page-forward > [^{]+[\s\S]*?animation:\s*none/, 'reduced motion should remove native page movement')
+assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.ios-native \.fade-in[\s\S]*?animation:\s*none/, 'reduced motion should remove generic native fade movement too')
+
 console.log('ui regression tests passed')

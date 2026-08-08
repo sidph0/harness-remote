@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Harness Remote Server</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Harness Remote</p>
+        <h1>Server Manager</h1>
+        <p>Start a private host service and copy the connection values to your phone or web client.</p>
+      </div>
+      <div id="health" class="status stopped" role="status"><span></span>Stopped</div>
+    </header>
+
+    <div id="error" class="error" role="alert" hidden></div>
+
+    <div class="layout">
+      <section class="card setup" aria-labelledby="setup-title">
+        <h2 id="setup-title">Setup</h2>
+        <label for="backend">Backend</label>
+        <select id="backend">
+          <option value="omp">Oh My Pi</option>
+          <option value="pi">PI</option>
+          <option value="claude">Claude Code</option>
+          <option value="opencode">OpenCode</option>
+        </select>
+
+        <div class="two-column">
+          <div><label for="username">Username</label><input id="username" autocomplete="username"></div>
+          <div><label for="password">Password</label><input id="password" type="password" autocomplete="new-password" placeholder="Required for LAN access"></div>
+        </div>
+
+        <div id="root-row">
+          <label for="root">Workspace root</label>
+          <div class="input-action"><input id="root" readonly><button id="choose-root" type="button" class="secondary">Choose</button></div>
+          <p class="hint">The bridge can browse and create sessions only inside this root.</p>
+        </div>
+
+        <div id="origin-row">
+          <label for="browser-origin">Web client origin</label>
+          <input id="browser-origin" type="url" placeholder="http://localhost:5173" spellcheck="false">
+          <p id="origin-hint" class="hint">Optional for OMP. Add the exact web or PWA origin when a browser connects directly.</p>
+        </div>
+
+        <details>
+          <summary>Advanced</summary>
+          <label for="port">Port</label><input id="port" type="number" min="1" max="65535">
+        </details>
+
+        <div id="prerequisites" class="prerequisites" aria-live="polite"></div>
+        <button id="start" type="button" class="primary">Start server</button>
+      </section>
+
+      <section class="card dashboard" aria-labelledby="dashboard-title">
+        <div class="section-head"><div><h2 id="dashboard-title">Server</h2><p id="backend-note" class="hint"></p></div><div class="actions"><button id="restart" type="button" class="secondary" disabled>Restart</button><button id="stop" type="button" class="danger" disabled>Stop</button></div></div>
+        <dl id="details" class="details">
+          <div><dt>Backend</dt><dd id="detail-backend">—</dd></div>
+          <div><dt>Version</dt><dd id="detail-version">—</dd></div>
+          <div><dt>PID</dt><dd id="detail-pid">—</dd></div>
+          <div><dt>Uptime</dt><dd id="detail-uptime">—</dd></div>
+          <div class="wide"><dt>Workspace root</dt><dd id="detail-root">—</dd></div>
+        </dl>
+
+        <div id="connection" class="connection">
+          <h3>Connect a client</h3>
+          <p class="hint">Start the server to show LAN connection values.</p>
+        </div>
+
+        <div class="guidance">
+          <h3>Network guidance</h3>
+          <p>Allow the selected port only on a trusted private network. For remote iPhone access, use Tailscale Serve instead of public port forwarding.</p>
+          <button id="tailscale-help" type="button" class="link-button">Open Tailscale setup</button>
+        </div>
+
+        <details open>
+          <summary>Recent server output</summary>
+          <pre id="logs" aria-live="polite">No output yet.</pre>
+        </details>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="renderer.js"></script>
+</body>
+</html>

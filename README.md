@@ -217,6 +217,39 @@ The bridge is dependency-free and runs on the Node.js standard library.
 
 The bridge also accepts the matching `HARNESS_REMOTE_*` environment variables. The legacy `OMP_BRIDGE_*` names are still accepted as compatibility aliases.
 
+## Desktop server manager
+
+The repository includes a standalone Electron manager for Windows, macOS, and Linux. It starts and stops the selected backend, checks required commands, reports health and recent output, and shows copyable connection values for Harness Remote.
+
+The manager supports OMP, PI, Claude Code, and OpenCode. Native iOS direct connections remain OMP-only; use the web or PWA client for the other backends.
+
+The manager does not install prerequisites or change firewall and Tailscale settings. Install the requirements it reports, then enter:
+
+- the backend;
+- a username and password for private LAN access;
+- a workspace root for bridge backends;
+- the exact web client origin for bridge-backed browser use; PI and Claude require it because native iOS does not expose those backends;
+- the port, only when the default is not suitable.
+
+The password stays in the running window and is passed to the child process through environment variables. It is not saved to disk, written to process arguments, or included in manager logs.
+
+For development:
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+Build the current platform:
+
+```bash
+cd desktop
+npm run dist
+```
+
+Release installers must be built and signed on their target platforms. The manager binds to the LAN for phone access, so keep Basic Auth enabled and permit its port only on a trusted LAN or tailnet. It gives firewall and Tailscale Serve guidance but does not request administrator access or change the host network.
+
 ## iOS build and installation
 
 The generated iOS project is ignored and must be created on a Mac. The repository does not publish an App Store or TestFlight build.
@@ -352,11 +385,13 @@ The bridge tests cover ACP translation, authentication, roots, lifecycle, and se
 - Collab runtime snapshots remain in memory. Attachment links persist only in iOS Keychain.
 - The direct bridge only streams events from its own ACP process. Use `/collab` for live desktop-session sharing.
 - There is no APNs background stream, global desktop-session discovery, OMP database inspection, or central service.
+- The desktop manager stores only non-secret settings. Its password field is required for LAN start and is never persisted.
 
 ## Project layout
 
 ```text
 bridge/                 Node standard-library HTTP/SSE to ACP bridge
+desktop/                Electron server manager for Windows, macOS, and Linux
 web/src/                React application and transport adapters
 web/src/collab/         OMP Collab link, crypto, WebSocket, and adapter code
 web/native-ios/         Swift Keychain source copied during iOS sync

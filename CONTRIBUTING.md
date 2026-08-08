@@ -18,6 +18,7 @@ if you are having an agent do the work.
 | `web/native-ios/` | Swift sources copied into the generated Xcode project by `npm run cap:sync:ios` |
 | `web/ios/` | Generated, ignored Xcode project; create it on a Mac and never commit it |
 | `bridge/` | Local HTTP/SSE-to-ACP service for OMP and PI. Launch commands and capabilities live in `src/harness-profiles.js` |
+| `desktop/` | Electron server manager. The main process owns backend children; the renderer has no Node integration |
 | `.github/workflows/` | Web deployment checks; native iOS packaging remains manual |
 | `OMP-INTEGRATION-PLAN.md` | Design notes and findings from the OMP integration, in Italian |
 
@@ -31,6 +32,7 @@ if you are having an agent do the work.
 - **For native work:** a Mac with Xcode 26 or newer, an iPhone on iOS 15 or newer, an Apple ID
   accepted for signing, and Sideloadly. The automated web and bridge gates run on any supported
   development platform; Xcode generation, synchronization, archive, export, and iPhone checks do not.
+- **For desktop manager work:** install `desktop/` dependencies. Packaging produces ignored output under `desktop/dist/`.
 
 ## Getting it running
 
@@ -88,6 +90,19 @@ room key and may contain a write token, so handle it like a password. The client
 AES-256-GCM with a 12-byte IV; a custom non-local relay must use `wss://`. Snapshots remain in
 memory, while attached bearer links persist only in iOS Keychain.
 
+### Desktop server manager
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+The renderer is intentionally dependency-free and context-isolated. Keep passwords out of persisted settings, process arguments, manager state, and logs. The main process is the only layer allowed to spawn or stop backend processes. The manager detects prerequisites and gives setup instructions; it must not install software, elevate privileges, edit firewall rules, or configure Tailscale.
+PI and Claude use the bridge but are web/PWA-only, so the setup form requires their exact browser origin for credentialed CORS. OMP always allows `capacitor://localhost` and accepts an optional exact browser origin.
+
+Run `npm run pack` to create an unpacked build for the current platform. Build and sign release installers on each target platform.
+
 ## The checks you must run
 
 Run the full automated matrix locally; GitHub's web workflow covers only its listed web gates and
@@ -110,6 +125,10 @@ npm run test:collab
 
 cd ../bridge
 npm test
+
+cd ../desktop
+npm test
+npm run pack
 ```
 
 `npm run build` is `tsc -b && vite build`, so it type-checks as well as bundles.
@@ -122,6 +141,7 @@ npm test
 | `ios-native-sync.test.mjs` and `ios-packaging.test.mjs` | Repeatable iOS metadata/native-source sync and packaging assumptions |
 | `test:collab` | Collab links, crypto, transport, adapter, attachment persistence, and read-only enforcement |
 | Bridge `npm test` | HTTP/SSE-to-ACP behavior, security boundaries, and harness fakes |
+| Desktop `npm test` and `npm run pack` | Manager validation, secret boundaries, isolated IPC shell, and current-platform packaging |
 
 ## The rule that matters most: every change lives on two backends
 
